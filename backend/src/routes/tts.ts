@@ -10,7 +10,7 @@ const ttsService = new TTSService();
  */
 router.post('/generate', async (req, res) => {
     try {
-        const { script, filename } = req.body;
+        const { script, filename, groupInfo } = req.body;
 
         if (!script) {
             return res.status(400).json({
@@ -29,6 +29,9 @@ router.post('/generate', async (req, res) => {
         console.log('🎤 TTS API 호출됨');
         console.log('📝 스크립트:', script);
         console.log('📁 파일명:', filename);
+        if (groupInfo) {
+            console.log('📋 그룹 정보:', groupInfo);
+        }
 
         // 스크립트를 여러 개의 음성 파일로 변환
         const audioFiles = await ttsService.generateAudioFromScript(script, filename);
@@ -49,7 +52,8 @@ router.post('/generate', async (req, res) => {
         res.json({
             success: true,
             audioFiles: audioInfo,
-            message: '음성 변환이 완료되었습니다.'
+            groupInfo: groupInfo,
+            message: groupInfo ? `${groupInfo.title} 그룹 음성 변환이 완료되었습니다.` : '음성 변환이 완료되었습니다.'
         });
 
     } catch (error) {

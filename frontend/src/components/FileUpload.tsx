@@ -227,7 +227,11 @@ const FileUpload: React.FC = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     script: scriptResult.script,
-                    filename: filename
+                    filename: filename,
+                    groupInfo: selectedGroup ? {
+                        id: selectedGroup,
+                        title: slideGroups.find(g => g.id === selectedGroup)?.title
+                    } : null
                 }),
             });
 
@@ -238,7 +242,7 @@ const FileUpload: React.FC = () => {
 
             if (response.ok && data.success) {
                 setAudioResult(data);
-                console.log('TTS 성공');
+                console.log('TTS 성공:', data.message);
             } else {
                 setError('TTS 실패: ' + (data.error || 'Unknown error'));
                 console.error('TTS 실패:', data);
@@ -476,6 +480,19 @@ const FileUpload: React.FC = () => {
                             </div>
                         </div>
                         <div style={{ marginTop: 16 }}>
+                            {selectedGroup && (
+                                <div style={{
+                                    marginBottom: 8,
+                                    padding: 8,
+                                    backgroundColor: '#fff3cd',
+                                    borderRadius: 4,
+                                    fontSize: 12,
+                                    color: '#856404',
+                                    border: '1px solid #ffeaa7'
+                                }}>
+                                    📋 선택된 그룹: {slideGroups.find(g => g.id === selectedGroup)?.title}
+                                </div>
+                            )}
                             <button
                                 onClick={generateAudio}
                                 disabled={generatingAudio}
@@ -489,7 +506,7 @@ const FileUpload: React.FC = () => {
                                     fontSize: 14
                                 }}
                             >
-                                {generatingAudio ? '음성 생성 중...' : '🎤 음성으로 변환'}
+                                {generatingAudio ? '음성 생성 중...' : `🎤 ${selectedGroup ? '선택된 그룹' : '전체'} 음성으로 변환`}
                             </button>
                         </div>
                     </div>
@@ -497,7 +514,19 @@ const FileUpload: React.FC = () => {
             )}
             {audioResult && (
                 <div style={{ marginTop: 32 }}>
-                    <h3>생성된 음성 파일</h3>
+                    <h3>
+                        생성된 음성 파일
+                        {selectedGroup && (
+                            <span style={{
+                                fontSize: 14,
+                                color: '#666',
+                                fontWeight: 'normal',
+                                marginLeft: 8
+                            }}>
+                                ({slideGroups.find(g => g.id === selectedGroup)?.title})
+                            </span>
+                        )}
+                    </h3>
                     <div style={{
                         border: '1px solid #ddd',
                         borderRadius: 8,
@@ -505,6 +534,9 @@ const FileUpload: React.FC = () => {
                         backgroundColor: '#f0f8f0',
                         marginBottom: 16
                     }}>
+                        <div style={{ marginBottom: 8, color: '#2e7d32', fontWeight: 'bold' }}>
+                            ✅ {audioResult.message}
+                        </div>
                         <div style={{ marginBottom: 16 }}>
                             <strong>음성 파일 ({audioResult.audioFiles.length}개):</strong>
                         </div>
