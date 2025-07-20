@@ -9,6 +9,7 @@ import uploadRouter from './routes/upload';
 import parseRouter from './routes/parse';
 import generateScriptRouter from './routes/generate-script';
 import groupSlidesRouter from './routes/group-slides';
+import ttsRouter from './routes/tts';
 
 console.log('OpenAI Key:', OPENAI_API_KEY);
 console.log('Server Port:', PORT);
@@ -22,6 +23,7 @@ app.use(express.json());
 
 // 정적 파일 서빙 설정
 app.use('/temp-images', express.static(path.join(__dirname, '../temp-images')));
+app.use('/audio', express.static(path.join(__dirname, '../uploads/audio')));
 
 app.get('/', (req, res) => {
     res.send('Hello, backend!');
@@ -31,6 +33,7 @@ app.use('/api/upload', uploadRouter);
 app.use('/api/parse', parseRouter);
 app.use('/api/generate-script', generateScriptRouter);
 app.use('/api/group-slides', groupSlidesRouter);
+app.use('/api/tts', ttsRouter);
 
 // 1시간마다 /uploads 폴더에서 24시간 이상 지난 파일 삭제
 const UPLOAD_DIR = path.join(__dirname, '../uploads');

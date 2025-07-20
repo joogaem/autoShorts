@@ -21,6 +21,8 @@ const FileUpload: React.FC = () => {
     const [scriptResult, setScriptResult] = useState<any>(null);
     const [slideGroups, setSlideGroups] = useState<any[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+    const [generatingAudio, setGeneratingAudio] = useState(false);
+    const [audioResult, setAudioResult] = useState<any>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const validateFile = (file: File) => {
@@ -203,6 +205,49 @@ const FileUpload: React.FC = () => {
             console.error('스크립트 생성 중 오류 발생:', e);
         } finally {
             setGeneratingScript(false);
+        }
+    };
+
+    const generateAudio = async () => {
+        if (!scriptResult) {
+            setError('스크립트가 없습니다.');
+            return;
+        }
+
+        setGeneratingAudio(true);
+        setError(null);
+        setAudioResult(null);
+
+        try {
+            console.log('TTS 요청 시작');
+            const filename = `script_${Date.now()}`;
+
+            const response = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/tts/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    script: scriptResult.script,
+                    filename: filename
+                }),
+            });
+
+            console.log('TTS 응답 상태:', response.status);
+
+            const data = await response.json();
+            console.log('TTS 응답:', data);
+
+            if (response.ok && data.success) {
+                setAudioResult(data);
+                console.log('TTS 성공');
+            } else {
+                setError('TTS 실패: ' + (data.error || 'Unknown error'));
+                console.error('TTS 실패:', data);
+            }
+        } catch (e: any) {
+            setError('TTS 중 오류 발생: ' + (e?.message || e));
+            console.error('TTS 중 오류 발생:', e);
+        } finally {
+            setGeneratingAudio(false);
         }
     };
 
@@ -430,6 +475,59 @@ const FileUpload: React.FC = () => {
                                 {scriptResult.script}
                             </div>
                         </div>
+                        <div style={{ marginTop: 16 }}>
+                            <button
+                                onClick={generateAudio}
+                                disabled={generatingAudio}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: generatingAudio ? '#ccc' : '#4caf50',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 4,
+                                    cursor: generatingAudio ? 'not-allowed' : 'pointer',
+                                    fontSize: 14
+                                }}
+                            >
+                                {generatingAudio ? '음성 생성 중...' : '🎤 음성으로 변환'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {audioResult && (
+                <div style={{ marginTop: 32 }}>
+                    <h3>생성된 음성 파일</h3>
+                    <div style={{
+                        border: '1px solid #ddd',
+                        borderRadius: 8,
+                        padding: 16,
+                        backgroundColor: '#f0f8f0',
+                        marginBottom: 16
+                    }}>
+                        <div style={{ marginBottom: 16 }}>
+                            <strong>음성 파일 ({audioResult.audioFiles.length}개):</strong>
+                        </div>
+                        {audioResult.audioFiles.map((audioFile: any, index: number) => (
+                            <div key={index} style={{
+                                border: '1px solid #ddd',
+                                borderRadius: 4,
+                                padding: 12,
+                                marginBottom: 8,
+                                backgroundColor: 'white'
+                            }}>
+                                <div style={{ marginBottom: 8 }}>
+                                    <strong>{audioFile.filename}</strong>
+                                </div>
+                                <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
+                                    재생 시간: {audioFile.duration}초 • 크기: {(audioFile.size / 1024 / 1024).toFixed(2)}MB
+                                </div>
+                                <audio controls style={{ width: '100%' }}>
+                                    <source src={`http://localhost:3001/audio/${audioFile.filename}`} type="audio/mpeg" />
+                                    브라우저가 오디오를 지원하지 않습니다.
+                                </audio>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}

@@ -19,11 +19,12 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^6.1.0",
+    "@google-cloud/text-to-speech": "^6.2.0",
     "@langchain/core": "^0.3.66",
     "@langchain/openai": "^0.6.2",
     "cors": "^2.8.5",
     "dotenv": "^17.1.0",
+    "elevenlabs-node": "^2.0.3",
     "express": "^5.1.0",
     "langchain": "^0.3.30",
     "multer": "^2.0.1",
