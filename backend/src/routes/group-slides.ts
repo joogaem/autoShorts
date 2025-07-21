@@ -1,4 +1,10 @@
 import express, { Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
+// @ts-ignore
+import pdfParse from 'pdf-parse';
+// @ts-ignore
+import pptx2json from 'pptx2json';
 
 interface Slide {
     id: number;
@@ -91,12 +97,70 @@ function createSlideGroup(slides: Slide[], groupId: number): SlideGroup {
 }
 
 // POST /api/group-slides
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     console.log('=== 슬라이드 그룹화 요청 시작 ===');
     console.log('요청 본문:', req.body);
 
     try {
-        const { slides, maxSlidesPerGroup = 3, maxDurationPerGroup = 60 } = req.body;
+        let { slides, filename, maxSlidesPerGroup = 3, maxDurationPerGroup = 60 } = req.body;
+
+        // slides가 없고 filename만 있으면 파일에서 슬라이드 추출
+        if ((!slides || !Array.isArray(slides) || slides.length === 0) && filename) {
+            // 파일 경로
+            const filePath = path.join(__dirname, '../../uploads', filename);
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ error: 'File not found' });
+            }
+            const ext = path.extname(filename).toLowerCase();
+            if (ext === '.pdf') {
+                const dataBuffer = fs.readFileSync(filePath);
+                const pdfData = await pdfParse(dataBuffer);
+                // PDF 텍스트 분할 함수 재사용
+                const splitPdfTextIntoPages = (text: string, numPages: number): string[] => {
+                    if (!text || text.trim() === '') return Array(numPages).fill('');
+                    const lines = text.split('\n').filter(line => line.trim() !== '');
+                    if (lines.length === 0) return Array(numPages).fill('');
+                    const linesPerPage = Math.ceil(lines.length / numPages);
+                    const pages: string[] = [];
+                    for (let i = 0; i < numPages; i++) {
+                        const startIndex = i * linesPerPage;
+                        const endIndex = Math.min((i + 1) * linesPerPage, lines.length);
+                        const pageLines = lines.slice(startIndex, endIndex);
+                        pages.push(pageLines.join('\n').trim());
+                    }
+                    return pages;
+                };
+                const pageTexts = splitPdfTextIntoPages(pdfData.text, pdfData.numpages);
+                slides = pageTexts.map((pageText, pageIndex) => ({
+                    id: pageIndex + 1,
+                    text: pageText,
+                    images: [],
+                    hasVisuals: false
+                }));
+            } else if (ext === '.pptx') {
+                const result = await pptx2json(filePath);
+                slides = result.slides.map((slide: any, slideIndex: number) => {
+                    const textContent = (slide.texts || []).join(' ').trim();
+                    const imageUrls: string[] = [];
+                    if (slide.images && slide.images.length > 0) {
+                        slide.images.forEach((img: any, imageIndex: number) => {
+                            if (img.data) {
+                                // 이미지 저장 로직은 생략 (필요시 parse.ts 참고)
+                                imageUrls.push('');
+                            }
+                        });
+                    }
+                    return {
+                        id: slideIndex + 1,
+                        text: textContent,
+                        images: imageUrls,
+                        hasVisuals: imageUrls.length > 0 || (slide.images && slide.images.length > 0)
+                    };
+                });
+            } else {
+                return res.status(400).json({ error: 'Unsupported file type' });
+            }
+        }
 
         // 필수 파라미터 검증
         if (!slides || !Array.isArray(slides) || slides.length === 0) {
@@ -162,4 +226,5 @@ router.post('/', (req: Request, res: Response) => {
     }
 });
 
+export { groupSlides, Slide, SlideGroup };
 export default router; 

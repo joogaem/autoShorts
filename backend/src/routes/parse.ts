@@ -191,20 +191,16 @@ router.post('/', async (req: Request, res: Response) => {
 
             console.log('슬라이드 구조 변환 완료, 슬라이드 수:', slides.length);
 
+            // 슬라이드 배열은 응답에서 제외, 최소 정보만 반환
             const response = {
                 filename,
                 type: 'pdf',
-                slides,
                 originalInfo: {
                     numpages: pdfData.numpages,
                     info: pdfData.info
                 }
             };
-
-            console.log('PDF 파싱 최종 응답 구조:', JSON.stringify(response, null, 2));
-            console.log('PDF 파싱 응답 전송 시작');
             res.json(response);
-            console.log('PDF 파싱 응답 전송 완료');
             return;
         } catch (err) {
             console.error('PDF 파싱 중 오류 발생:', err);
@@ -286,15 +282,12 @@ router.post('/', async (req: Request, res: Response) => {
 
             console.log('슬라이드 구조 변환 완료, 슬라이드 수:', slides.length);
 
+            // 슬라이드 배열은 응답에서 제외, 최소 정보만 반환
             const response = {
                 filename,
                 type: 'pptx',
-                slides,
             };
-
-            console.log('PPTX 파싱 응답 전송 시작');
             res.json(response);
-            console.log('PPTX 파싱 응답 전송 완료');
             return;
         } catch (err) {
             console.error('PPTX 파싱 중 오류 발생:', err);

@@ -18,6 +18,9 @@ interface ScriptRequest {
 
 interface ScriptResponse {
     script: string;
+    hook: string;
+    coreMessage: string;
+    cta: string;
     estimatedDuration: number;
     style: string;
     tone: string;
@@ -124,8 +127,14 @@ export class ScriptGeneratorService {
             // 예상 지속 시간 계산 (한국어 기준 약 3-4음절/초)
             const estimatedDuration = this.calculateDuration(script);
 
+            // 스크립트를 섹션별로 분리
+            const { hook, coreMessage, cta } = this.parseScriptSections(script.trim());
+
             const scriptResponse: ScriptResponse = {
                 script: script.trim(),
+                hook,
+                coreMessage,
+                cta,
                 estimatedDuration,
                 style: request.style || 'educational',
                 tone: request.tone || 'friendly',
@@ -159,6 +168,48 @@ export class ScriptGeneratorService {
 
         // 최소 30초, 최대 90초로 제한
         return Math.max(30, Math.min(90, duration));
+    }
+
+    private parseScriptSections(script: string): { hook: string; coreMessage: string; cta: string } {
+        // 스크립트를 줄 단위로 분리
+        const lines = script.split('\n').filter(line => line.trim());
+
+        let hook = '';
+        let coreMessage = '';
+        let cta = '';
+        let currentSection = 'coreMessage'; // 기본값
+
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+
+            // 섹션 구분자 찾기
+            if (trimmedLine.includes('Hook') || trimmedLine.includes('1.') || trimmedLine.includes('오프닝')) {
+                currentSection = 'hook';
+                continue;
+            } else if (trimmedLine.includes('Core Message') || trimmedLine.includes('2.') || trimmedLine.includes('핵심')) {
+                currentSection = 'coreMessage';
+                continue;
+            } else if (trimmedLine.includes('CTA') || trimmedLine.includes('3.') || trimmedLine.includes('행동')) {
+                currentSection = 'cta';
+                continue;
+            }
+
+            // 내용을 해당 섹션에 추가
+            if (currentSection === 'hook') {
+                hook += (hook ? '\n' : '') + trimmedLine;
+            } else if (currentSection === 'coreMessage') {
+                coreMessage += (coreMessage ? '\n' : '') + trimmedLine;
+            } else if (currentSection === 'cta') {
+                cta += (cta ? '\n' : '') + trimmedLine;
+            }
+        }
+
+        // 섹션이 비어있으면 전체 스크립트를 coreMessage로 설정
+        if (!hook && !coreMessage && !cta) {
+            coreMessage = script;
+        }
+
+        return { hook, coreMessage, cta };
     }
 
     public clearCache(): void {

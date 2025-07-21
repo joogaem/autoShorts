@@ -16,11 +16,12 @@ const FileUpload: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null);
     const [parsing, setParsing] = useState(false);
-    const [parseResult, setParseResult] = useState<{ type: string; slides: Slide[]; warning?: string } | null>(null);
+    const [parseResult, setParseResult] = useState<{ type: string; warning?: string } | null>(null);
     const [generatingScript, setGeneratingScript] = useState(false);
     const [scriptResult, setScriptResult] = useState<any>(null);
     const [slideGroups, setSlideGroups] = useState<any[]>([]);
-    const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+    // 1. 상태: selectedGroups (배열)
+    const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
     const [generatingAudio, setGeneratingAudio] = useState(false);
     const [audioResult, setAudioResult] = useState<any>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -60,73 +61,40 @@ const FileUpload: React.FC = () => {
             xhr.onload = async () => {
                 if (xhr.status === 200) {
                     setStatus('업로드 성공!');
-                    // 업로드 성공 시 파싱 요청
                     try {
                         setParsing(true);
                         const { filename } = JSON.parse(xhr.responseText);
-                        console.log('업로드 성공, 파싱 시작. 파일명:', filename);
 
+                        // 1. 파싱 요청
                         const parseRes = await fetch(process.env.NEXT_PUBLIC_PARSE_URL || 'http://localhost:3001/api/parse', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ filename }),
                         });
+                        const parseData = await parseRes.json();
 
-                        console.log('파싱 응답 상태:', parseRes.status, parseRes.statusText);
-                        console.log('파싱 응답 헤더:', Object.fromEntries(parseRes.headers.entries()));
-
-                        let parseData: any;
-                        let responseText = '';
-                        try {
-                            responseText = await parseRes.text();
-                            console.log('파싱 응답 원본 텍스트:', responseText);
-
-                            parseData = JSON.parse(responseText);
-                            console.log('파싱 응답 파싱 성공:', parseData);
-                        } catch (jsonErr) {
-                            // JSON 파싱 실패 시 text로 받아서 에러로 처리
-                            console.error('파싱 응답 JSON 파싱 실패:', jsonErr);
-                            setError('파싱 응답 파싱 실패: ' + responseText);
-                            console.error('파싱 응답 파싱 실패:', responseText, jsonErr);
-                            return;
-                        }
-                        console.log('parseRes.ok && parseData.slides', parseRes.ok, parseData.slides)
-                        console.log('전체 parseData 구조:', JSON.stringify(parseData, null, 2));
-                        console.log('parseData.type:', parseData.type);
-                        console.log('parseData.slides 존재 여부:', !!parseData.slides);
-                        console.log('parseData.slides 타입:', typeof parseData.slides);
-                        console.log('parseData.slides 길이:', parseData.slides?.length);
-
-                        if (parseRes.ok && parseData.slides) {
-                            console.log('파싱 성공, 슬라이드 수:', parseData.slides.length);
-                            setParseResult({
-                                type: parseData.type,
-                                slides: parseData.slides,
-                                warning: parseData.warning
+                        // 2. 파싱 성공 여부는 filename/type으로만 판단
+                        if (parseRes.ok && parseData.filename && parseData.type) {
+                            // 3. 그룹핑 요청 (filename만 전달)
+                            const groupRes = await fetch(process.env.NEXT_PUBLIC_GROUP_URL || 'http://localhost:3001/api/group-slides', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ filename: parseData.filename }),
                             });
-
-                            // 그룹 정보가 있으면 바로 설정
-                            if (parseData.groups && Array.isArray(parseData.groups)) {
-                                console.log('그룹 정보 발견:', parseData.groups.length, '개 그룹');
-                                setSlideGroups(parseData.groups);
-                            }
-
-                            if (parseData.warning) {
-                                console.warn('파싱 경고:', parseData.warning);
-                                setWarning(parseData.warning);
+                            const groupData = await groupRes.json();
+                            if (groupRes.ok && groupData.data && Array.isArray(groupData.data.groups)) {
+                                setSlideGroups(groupData.data.groups);
+                                setParseResult({ type: parseData.type, warning: parseData.warning });
+                            } else {
+                                setError('그룹핑 실패: ' + (groupData.error || 'Unknown error'));
                             }
                         } else {
-                            console.error('파싱 실패 - 응답이 성공이 아니거나 slides가 없음:', parseData);
                             setError('파싱 실패: ' + (parseData.error || JSON.stringify(parseData) || 'Unknown error'));
-                            console.error('파싱 실패:', parseData);
                         }
                     } catch (e: any) {
-                        console.error('파싱 요청 중 예외 발생:', e);
-                        setError('파싱 요청 중 오류 발생: ' + (e?.message || e));
-                        console.error('파싱 요청 중 오류 발생:', e);
+                        setError('파싱/그룹핑 요청 중 오류 발생: ' + (e?.message || e));
                     } finally {
                         setParsing(false);
-                        console.log('파싱 완료');
                     }
                 } else {
                     setError('업로드 실패: ' + xhr.responseText);
@@ -155,54 +123,40 @@ const FileUpload: React.FC = () => {
         }
     };
 
-    const generateScript = async () => {
-        if (!parseResult || !parseResult.slides) {
-            setError('파싱 결과가 없습니다.');
+    // 그룹 선택 핸들러
+    const handleGroupSelect = (groupId: string) => {
+        setSelectedGroups(prev =>
+            prev.includes(groupId)
+                ? prev.filter(id => id !== groupId)
+                : [...prev, groupId]
+        );
+    };
+
+    // 스크립트 생성 함수 (여러 그룹)
+    const generateScriptsForSelectedGroups = async () => {
+        if (!slideGroups.length || selectedGroups.length === 0) {
+            setError('선택된 그룹이 없습니다.');
             return;
         }
-
-        // 선택된 그룹이 있으면 해당 그룹의 슬라이드만 사용
-        let slidesToUse = parseResult.slides;
-        if (selectedGroup && slideGroups.length > 0) {
-            const selectedGroupData = slideGroups.find(g => g.id === selectedGroup);
-            if (selectedGroupData) {
-                slidesToUse = selectedGroupData.slides;
-                console.log('선택된 그룹의 슬라이드 사용:', selectedGroupData.title, slidesToUse.length, '개 슬라이드');
-            }
-        }
-
         setGeneratingScript(true);
         setError(null);
         setScriptResult(null);
-
         try {
-            console.log('스크립트 생성 요청 시작');
-            const response = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/generate-script', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    slides: slidesToUse,
-                    style: 'educational',
-                    tone: 'friendly',
-                    targetDuration: 60
-                }),
-            });
-
-            console.log('스크립트 생성 응답 상태:', response.status);
-
-            const data = await response.json();
-            console.log('스크립트 생성 응답:', data);
-
-            if (response.ok && data.success) {
-                setScriptResult(data.data);
-                console.log('스크립트 생성 성공');
-            } else {
-                setError('스크립트 생성 실패: ' + (data.error || 'Unknown error'));
-                console.error('스크립트 생성 실패:', data);
-            }
+            const selected = slideGroups.filter(g => selectedGroups.includes(g.id));
+            const results = await Promise.all(
+                selected.map(async group => {
+                    const response = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/generate-script', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ slides: group.slides, style: 'educational', tone: 'friendly', targetDuration: group.estimatedDuration }),
+                    });
+                    const data = await response.json();
+                    return { group, script: data.data };
+                })
+            );
+            setScriptResult(results);
         } catch (e: any) {
             setError('스크립트 생성 중 오류 발생: ' + (e?.message || e));
-            console.error('스크립트 생성 중 오류 발생:', e);
         } finally {
             setGeneratingScript(false);
         }
@@ -226,11 +180,15 @@ const FileUpload: React.FC = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    script: scriptResult.script,
+                    script: {
+                        hook: scriptResult.hook || '',
+                        coreMessage: scriptResult.coreMessage || scriptResult.script,
+                        cta: scriptResult.cta || ''
+                    },
                     filename: filename,
-                    groupInfo: selectedGroup ? {
-                        id: selectedGroup,
-                        title: slideGroups.find(g => g.id === selectedGroup)?.title
+                    groupInfo: selectedGroups.length === 1 ? {
+                        id: selectedGroups[0],
+                        title: slideGroups.find(g => g.id === selectedGroups[0])?.title
                     } : null
                 }),
             });
@@ -296,8 +254,8 @@ const FileUpload: React.FC = () => {
                     <h3>파싱 결과 ({parseResult.type.toUpperCase()})</h3>
                     <div style={{ marginBottom: 16 }}>
                         <button
-                            onClick={generateScript}
-                            disabled={generatingScript}
+                            onClick={generateScriptsForSelectedGroups}
+                            disabled={generatingScript || selectedGroups.length === 0}
                             style={{
                                 padding: '8px 16px',
                                 backgroundColor: generatingScript ? '#ccc' : '#1976d2',
@@ -325,19 +283,24 @@ const FileUpload: React.FC = () => {
                                 {slideGroups.map((group) => (
                                     <div
                                         key={group.id}
-                                        onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)}
                                         style={{
-                                            border: selectedGroup === group.id ? '2px solid #1976d2' : '1px solid #ddd',
+                                            border: selectedGroups.includes(group.id) ? '2px solid #1976d2' : '1px solid #ddd',
                                             borderRadius: 8,
                                             padding: 12,
                                             cursor: 'pointer',
-                                            backgroundColor: selectedGroup === group.id ? '#f0f8ff' : 'white',
+                                            backgroundColor: selectedGroups.includes(group.id) ? '#f0f8ff' : 'white',
                                             transition: 'all 0.2s ease'
                                         }}
                                     >
-                                        <div style={{ marginBottom: 8 }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedGroups.includes(group.id)}
+                                                onChange={() => handleGroupSelect(group.id)}
+                                                style={{ marginRight: 8 }}
+                                            />
                                             <strong>{group.title}</strong>
-                                        </div>
+                                        </label>
                                         <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
                                             {group.slides.length}개 슬라이드 • {group.estimatedDuration}초
                                         </div>
@@ -357,25 +320,13 @@ const FileUpload: React.FC = () => {
                                                 }}
                                             />
                                         )}
-                                        {selectedGroup === group.id && (
-                                            <div style={{
-                                                marginTop: 8,
-                                                padding: 8,
-                                                backgroundColor: '#e3f2fd',
-                                                borderRadius: 4,
-                                                fontSize: 12,
-                                                color: '#1976d2'
-                                            }}>
-                                                ✓ 선택됨
-                                            </div>
-                                        )}
                                     </div>
                                 ))}
                             </div>
-                            {selectedGroup && (
+                            {selectedGroups.length > 0 && (
                                 <button
-                                    onClick={generateScript}
-                                    disabled={generatingScript}
+                                    onClick={generateScriptsForSelectedGroups}
+                                    disabled={generatingScript || selectedGroups.length === 0}
                                     style={{
                                         padding: '8px 16px',
                                         backgroundColor: generatingScript ? '#ccc' : '#ff9800',
@@ -393,179 +344,215 @@ const FileUpload: React.FC = () => {
                     )}
 
                     {/* 기존 파싱 결과 표시 */}
-                    {parseResult.slides.map((slide) => (
-                        <div key={slide.id} style={{ border: '1px solid #eee', borderRadius: 8, marginBottom: 16, padding: 12 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                                {parseResult.type === 'pdf' ? '페이지' : '슬라이드'} {slide.id}
-                                {slide.hasVisuals && (
-                                    <span style={{ marginLeft: 8, fontSize: 12, color: '#666' }}>
-                                        (시각적 요소 포함)
-                                    </span>
-                                )}
-                            </div>
-                            {slide.text && slide.text.trim() !== '' ? (
-                                <div style={{ marginBottom: 8 }}>
-                                    <strong>텍스트:</strong>
-                                    <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{slide.text}</p>
+                    {/* 1. slides(페이지별) 표시 UI 완전 제거 */}
+                    {/* 2. 그룹 리스트 UI를 체크박스 다중 선택으로 변경 */}
+                    {/* 3. 선택된 그룹만 대상으로 스크립트 생성 버튼 및 결과 표시 */}
+                    {scriptResult && Array.isArray(scriptResult) && scriptResult.length > 0 && (
+                        <div style={{ marginTop: 32 }}>
+                            <h3>생성된 스크립트</h3>
+                            {scriptResult.map(({ group, script }, idx) => (
+                                <div key={group.id} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, backgroundColor: '#f9f9f9', marginBottom: 24 }}>
+                                    <div style={{ fontWeight: 600, marginBottom: 8 }}>{group.title} (예상 {group.estimatedDuration}초)</div>
+                                    <div style={{ marginBottom: 8 }}><strong>스타일:</strong> {script.style}</div>
+                                    <div style={{ marginBottom: 8 }}><strong>톤:</strong> {script.tone}</div>
+                                    <div style={{ marginBottom: 16 }}><strong>스크립트:</strong></div>
+                                    {script.hook && (
+                                        <div style={{ marginBottom: 12 }}>
+                                            <div style={{ fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>🎯 Hook (도입부)</div>
+                                            <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', backgroundColor: 'white', padding: 8, borderRadius: 4, border: '1px solid #e3f2fd', fontSize: 14 }}>{script.hook}</div>
+                                        </div>
+                                    )}
+                                    {script.coreMessage && (
+                                        <div style={{ marginBottom: 12 }}>
+                                            <div style={{ fontWeight: 'bold', color: '#2e7d32', marginBottom: 4 }}>💡 Core Message (핵심 내용)</div>
+                                            <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', backgroundColor: 'white', padding: 8, borderRadius: 4, border: '1px solid #c8e6c9', fontSize: 14 }}>{script.coreMessage}</div>
+                                        </div>
+                                    )}
+                                    {script.cta && (
+                                        <div style={{ marginBottom: 12 }}>
+                                            <div style={{ fontWeight: 'bold', color: '#f57c00', marginBottom: 4 }}>📢 CTA (행동 유도)</div>
+                                            <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', backgroundColor: 'white', padding: 8, borderRadius: 4, border: '1px solid #ffe0b2', fontSize: 14 }}>{script.cta}</div>
+                                        </div>
+                                    )}
                                 </div>
-                            ) : (
-                                <div style={{ marginBottom: 8, color: '#666', fontStyle: 'italic' }}>
-                                    텍스트 내용이 없습니다.
-                                </div>
-                            )}
-                            {slide.images && slide.images.length > 0 && (
-                                <div style={{ marginTop: 8 }}>
-                                    <strong>이미지 ({slide.images.length}개):</strong>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                                        {slide.images.map((imageUrl, imageIndex) => (
-                                            <img
-                                                key={imageIndex}
-                                                src={`http://localhost:3001${imageUrl}`}
-                                                alt={`slide${slide.id}-img${imageIndex + 1}`}
-                                                style={{
-                                                    maxWidth: 200,
-                                                    maxHeight: 150,
-                                                    border: '1px solid #ddd',
-                                                    borderRadius: 4
-                                                }}
-                                                onError={(e) => {
-                                                    console.error('이미지 로드 실패:', imageUrl);
-                                                    e.currentTarget.style.display = 'none';
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                    {parseResult.slides.length === 0 && (
-                        <div style={{ textAlign: 'center', color: '#666', fontStyle: 'italic', padding: 20 }}>
-                            파싱된 내용이 없습니다.
+                            ))}
                         </div>
                     )}
-                </div>
-            )}
-            {scriptResult && (
-                <div style={{ marginTop: 32 }}>
-                    <h3>생성된 스크립트</h3>
-                    <div style={{
-                        border: '1px solid #ddd',
-                        borderRadius: 8,
-                        padding: 16,
-                        backgroundColor: '#f9f9f9',
-                        marginBottom: 16
-                    }}>
-                        <div style={{ marginBottom: 8 }}>
-                            <strong>예상 지속 시간:</strong> {scriptResult.estimatedDuration}초
-                        </div>
-                        <div style={{ marginBottom: 8 }}>
-                            <strong>스타일:</strong> {scriptResult.style}
-                        </div>
-                        <div style={{ marginBottom: 16 }}>
-                            <strong>톤:</strong> {scriptResult.tone}
-                        </div>
-                        <div>
-                            <strong>스크립트:</strong>
+                    {scriptResult && (
+                        <div style={{ marginTop: 32 }}>
+                            <h3>생성된 스크립트</h3>
                             <div style={{
-                                marginTop: 8,
-                                whiteSpace: 'pre-wrap',
-                                lineHeight: '1.6',
-                                backgroundColor: 'white',
-                                padding: 12,
-                                borderRadius: 4,
-                                border: '1px solid #eee'
-                            }}>
-                                {scriptResult.script}
-                            </div>
-                        </div>
-                        <div style={{ marginTop: 16 }}>
-                            {selectedGroup && (
-                                <div style={{
-                                    marginBottom: 8,
-                                    padding: 8,
-                                    backgroundColor: '#fff3cd',
-                                    borderRadius: 4,
-                                    fontSize: 12,
-                                    color: '#856404',
-                                    border: '1px solid #ffeaa7'
-                                }}>
-                                    📋 선택된 그룹: {slideGroups.find(g => g.id === selectedGroup)?.title}
-                                </div>
-                            )}
-                            <button
-                                onClick={generateAudio}
-                                disabled={generatingAudio}
-                                style={{
-                                    padding: '8px 16px',
-                                    backgroundColor: generatingAudio ? '#ccc' : '#4caf50',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: 4,
-                                    cursor: generatingAudio ? 'not-allowed' : 'pointer',
-                                    fontSize: 14
-                                }}
-                            >
-                                {generatingAudio ? '음성 생성 중...' : `🎤 ${selectedGroup ? '선택된 그룹' : '전체'} 음성으로 변환`}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {audioResult && (
-                <div style={{ marginTop: 32 }}>
-                    <h3>
-                        생성된 음성 파일
-                        {selectedGroup && (
-                            <span style={{
-                                fontSize: 14,
-                                color: '#666',
-                                fontWeight: 'normal',
-                                marginLeft: 8
-                            }}>
-                                ({slideGroups.find(g => g.id === selectedGroup)?.title})
-                            </span>
-                        )}
-                    </h3>
-                    <div style={{
-                        border: '1px solid #ddd',
-                        borderRadius: 8,
-                        padding: 16,
-                        backgroundColor: '#f0f8f0',
-                        marginBottom: 16
-                    }}>
-                        <div style={{ marginBottom: 8, color: '#2e7d32', fontWeight: 'bold' }}>
-                            ✅ {audioResult.message}
-                        </div>
-                        <div style={{ marginBottom: 16 }}>
-                            <strong>음성 파일 ({audioResult.audioFiles.length}개):</strong>
-                        </div>
-                        {audioResult.audioFiles.map((audioFile: any, index: number) => (
-                            <div key={index} style={{
                                 border: '1px solid #ddd',
-                                borderRadius: 4,
-                                padding: 12,
-                                marginBottom: 8,
-                                backgroundColor: 'white'
+                                borderRadius: 8,
+                                padding: 16,
+                                backgroundColor: '#f9f9f9',
+                                marginBottom: 16
                             }}>
                                 <div style={{ marginBottom: 8 }}>
-                                    <strong>{audioFile.filename}</strong>
+                                    <strong>예상 지속 시간:</strong> {scriptResult.estimatedDuration}초
                                 </div>
-                                <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
-                                    재생 시간: {audioFile.duration}초 • 크기: {(audioFile.size / 1024 / 1024).toFixed(2)}MB
+                                <div style={{ marginBottom: 8 }}>
+                                    <strong>스타일:</strong> {scriptResult.style}
                                 </div>
-                                <audio controls style={{ width: '100%' }}>
-                                    <source src={`http://localhost:3001/audio/${audioFile.filename}`} type="audio/mpeg" />
-                                    브라우저가 오디오를 지원하지 않습니다.
-                                </audio>
+                                <div style={{ marginBottom: 16 }}>
+                                    <strong>톤:</strong> {scriptResult.tone}
+                                </div>
+                                <div>
+                                    <strong>스크립트:</strong>
+                                    <div style={{ marginTop: 8 }}>
+                                        {scriptResult.hook && (
+                                            <div style={{ marginBottom: 12 }}>
+                                                <div style={{ fontWeight: 'bold', color: '#1976d2', marginBottom: 4 }}>
+                                                    🎯 Hook (도입부)
+                                                </div>
+                                                <div style={{
+                                                    whiteSpace: 'pre-wrap',
+                                                    lineHeight: '1.6',
+                                                    backgroundColor: 'white',
+                                                    padding: 8,
+                                                    borderRadius: 4,
+                                                    border: '1px solid #e3f2fd',
+                                                    fontSize: 14
+                                                }}>
+                                                    {scriptResult.hook}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {scriptResult.coreMessage && (
+                                            <div style={{ marginBottom: 12 }}>
+                                                <div style={{ fontWeight: 'bold', color: '#2e7d32', marginBottom: 4 }}>
+                                                    💡 Core Message (핵심 내용)
+                                                </div>
+                                                <div style={{
+                                                    whiteSpace: 'pre-wrap',
+                                                    lineHeight: '1.6',
+                                                    backgroundColor: 'white',
+                                                    padding: 8,
+                                                    borderRadius: 4,
+                                                    border: '1px solid #e8f5e8',
+                                                    fontSize: 14
+                                                }}>
+                                                    {scriptResult.coreMessage}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {scriptResult.cta && (
+                                            <div style={{ marginBottom: 12 }}>
+                                                <div style={{ fontWeight: 'bold', color: '#f57c00', marginBottom: 4 }}>
+                                                    🎬 CTA (행동 유도)
+                                                </div>
+                                                <div style={{
+                                                    whiteSpace: 'pre-wrap',
+                                                    lineHeight: '1.6',
+                                                    backgroundColor: 'white',
+                                                    padding: 8,
+                                                    borderRadius: 4,
+                                                    border: '1px solid #fff3e0',
+                                                    fontSize: 14
+                                                }}>
+                                                    {scriptResult.cta}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: 16 }}>
+                                    {selectedGroups.length === 1 && (
+                                        <div style={{
+                                            marginBottom: 8,
+                                            padding: 8,
+                                            backgroundColor: '#fff3cd',
+                                            borderRadius: 4,
+                                            fontSize: 12,
+                                            color: '#856404',
+                                            border: '1px solid #ffeaa7'
+                                        }}>
+                                            📋 선택된 그룹: {slideGroups.find(g => g.id === selectedGroups[0])?.title}
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={generateAudio}
+                                        disabled={generatingAudio}
+                                        style={{
+                                            padding: '8px 16px',
+                                            backgroundColor: generatingAudio ? '#ccc' : '#4caf50',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: 4,
+                                            cursor: generatingAudio ? 'not-allowed' : 'pointer',
+                                            fontSize: 14
+                                        }}
+                                    >
+                                        {generatingAudio ? '음성 생성 중...' : `🎤 ${selectedGroups.length === 1 ? '선택된 그룹' : '전체'} 음성으로 변환`}
+                                    </button>
+                                </div>
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    )}
+                    {scriptResult && (
+                        <div style={{ marginTop: 32 }}>
+                            <h3>API 결과(raw)</h3>
+                            <pre style={{ background: '#f5f5f5', padding: 16, borderRadius: 8, fontSize: 13, overflowX: 'auto' }}>
+                                {JSON.stringify(scriptResult, null, 2)}
+                            </pre>
+                        </div>
+                    )}
+                    {audioResult && (
+                        <div style={{ marginTop: 32 }}>
+                            <h3>
+                                생성된 음성 파일
+                                {selectedGroups.length === 1 && (
+                                    <span style={{
+                                        fontSize: 14,
+                                        color: '#666',
+                                        fontWeight: 'normal',
+                                        marginLeft: 8
+                                    }}>
+                                        ({slideGroups.find(g => g.id === selectedGroups[0])?.title})
+                                    </span>
+                                )}
+                            </h3>
+                            <div style={{
+                                border: '1px solid #ddd',
+                                borderRadius: 8,
+                                padding: 16,
+                                backgroundColor: '#f0f8f0',
+                                marginBottom: 16
+                            }}>
+                                <div style={{ marginBottom: 8, color: '#2e7d32', fontWeight: 'bold' }}>
+                                    ✅ {audioResult.message}
+                                </div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <strong>음성 파일 ({audioResult.audioFiles.length}개):</strong>
+                                </div>
+                                {audioResult.audioFiles.map((audioFile: any, index: number) => (
+                                    <div key={index} style={{
+                                        border: '1px solid #ddd',
+                                        borderRadius: 4,
+                                        padding: 12,
+                                        marginBottom: 8,
+                                        backgroundColor: 'white'
+                                    }}>
+                                        <div style={{ marginBottom: 8 }}>
+                                            <strong>{audioFile.filename}</strong>
+                                        </div>
+                                        <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
+                                            재생 시간: {audioFile.duration}초 • 크기: {(audioFile.size / 1024 / 1024).toFixed(2)}MB
+                                        </div>
+                                        <audio controls style={{ width: '100%' }}>
+                                            <source src={`http://localhost:3001/audio/${audioFile.filename}`} type="audio/mpeg" />
+                                            브라우저가 오디오를 지원하지 않습니다.
+                                        </audio>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {status && <div style={{ color: 'green', marginTop: 16 }}>{status}</div>}
+                    {error && <div style={{ color: 'red', marginTop: 16 }}>{error}</div>}
+                    {warning && <div style={{ color: 'orange', marginTop: 16 }}>{warning}</div>}
                 </div>
             )}
-            {status && <div style={{ color: 'green', marginTop: 16 }}>{status}</div>}
-            {error && <div style={{ color: 'red', marginTop: 16 }}>{error}</div>}
-            {warning && <div style={{ color: 'orange', marginTop: 16 }}>{warning}</div>}
         </div>
     );
 };
