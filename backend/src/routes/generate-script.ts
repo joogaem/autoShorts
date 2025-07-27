@@ -10,7 +10,7 @@ router.post('/', async (req: Request, res: Response) => {
     console.log('요청 본문:', req.body);
 
     try {
-        const { slides, style, tone, targetDuration, maxSlidesPerGroup = 3, maxDurationPerGroup = 60 } = req.body;
+        const { slides, style, tone, targetDuration } = req.body;
 
         // 필수 파라미터 검증
         if (!slides || !Array.isArray(slides) || slides.length === 0) {
@@ -25,9 +25,7 @@ router.post('/', async (req: Request, res: Response) => {
             slidesCount: slides.length,
             style,
             tone,
-            targetDuration,
-            maxSlidesPerGroup,
-            maxDurationPerGroup
+            targetDuration
         });
 
         // 슬라이드 데이터 검증
@@ -46,36 +44,36 @@ router.post('/', async (req: Request, res: Response) => {
             return;
         }
 
-        // 1. 슬라이드 그룹핑
-        const groups = groupSlides(slides, maxSlidesPerGroup, maxDurationPerGroup);
-        console.log('슬라이드 그룹핑 결과:', groups.map(g => ({ id: g.id, title: g.title, slideCount: g.slides.length, estimatedDuration: g.estimatedDuration })));
-
-        // 2. 각 그룹별로 스크립트 생성
+        // 단일 그룹으로 처리 (이미 프론트엔드에서 그룹화된 슬라이드들)
         const scriptService = ScriptGeneratorService.getInstance();
-        const groupScripts = [];
-        for (const group of groups) {
-            const scriptRequest = {
-                slides: group.slides,
-                style: style || 'educational',
-                tone: tone || 'friendly',
-                targetDuration: group.estimatedDuration || 60
-            };
-            const script = await scriptService.generateScript(scriptRequest);
-            groupScripts.push({
-                groupId: group.id,
-                groupTitle: group.title,
-                estimatedDuration: group.estimatedDuration,
-                script
-            });
-        }
+        const scriptRequest = {
+            slides: slides,
+            style: style || 'educational',
+            tone: tone || 'friendly',
+            targetDuration: targetDuration || 60
+        };
 
-        // 3. 그룹별 스크립트 리스트 반환
-        res.json({
-            success: true,
-            data: groupScripts
+        console.log('스크립트 생성 요청:', {
+            slidesCount: slides.length,
+            style: scriptRequest.style,
+            tone: scriptRequest.tone,
+            targetDuration: scriptRequest.targetDuration
         });
 
-        console.log('=== 그룹별 스크립트 생성 요청 완료 ===');
+        const script = await scriptService.generateScript(scriptRequest);
+
+        // 단일 스크립트 결과 반환
+        res.json({
+            success: true,
+            data: [{
+                groupId: 'single-group',
+                groupTitle: 'Generated Script',
+                estimatedDuration: script.estimatedDuration,
+                script: script
+            }]
+        });
+
+        console.log('=== 스크립트 생성 요청 완료 ===');
 
     } catch (error) {
         console.error('스크립트 생성 중 오류 발생:', error);

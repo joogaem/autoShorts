@@ -191,10 +191,11 @@ router.post('/', async (req: Request, res: Response) => {
 
             console.log('슬라이드 구조 변환 완료, 슬라이드 수:', slides.length);
 
-            // 슬라이드 배열은 응답에서 제외, 최소 정보만 반환
+            // 슬라이드 배열을 포함하여 응답
             const response = {
                 filename,
                 type: 'pdf',
+                slides,
                 originalInfo: {
                     numpages: pdfData.numpages,
                     info: pdfData.info
@@ -272,20 +273,38 @@ router.post('/', async (req: Request, res: Response) => {
                     });
                 }
 
+                // 시각적 분석을 위한 추가 정보 계산
+                const textLength = textContent.length;
+                const imageCount = imageUrls.length;
+                const hasVisuals = imageCount > 0;
+                const isTextHeavy = textLength > 200 && imageCount === 0;
+                const isImageHeavy = imageCount >= 2 && textLength < 100;
+                const isBalanced = textLength > 100 && imageCount > 0;
+                const isMinimal = textLength <= 100 && imageCount === 0;
+
                 return {
                     id: slideIndex + 1,
                     text: textContent,
                     images: imageUrls,
-                    hasVisuals: imageUrls.length > 0 || (slide.images && slide.images.length > 0)
+                    hasVisuals,
+                    // 시각적 분석을 위한 메타데이터
+                    visualMetadata: {
+                        textLength,
+                        imageCount,
+                        slideType: isTextHeavy ? 'text-heavy' :
+                            isImageHeavy ? 'image-heavy' :
+                                isBalanced ? 'balanced' : 'minimal'
+                    }
                 };
             });
 
             console.log('슬라이드 구조 변환 완료, 슬라이드 수:', slides.length);
 
-            // 슬라이드 배열은 응답에서 제외, 최소 정보만 반환
+            // 슬라이드 배열을 포함하여 응답
             const response = {
                 filename,
                 type: 'pptx',
+                slides,
             };
             res.json(response);
             return;
