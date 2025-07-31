@@ -18,8 +18,16 @@ console.log('Server Port:', PORT);
 const app = express();
 const port = PORT;
 
-// CORS 미들웨어를 모든 요청에 적용
-app.use(cors());
+// CORS 설정
+const corsOptions = {
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

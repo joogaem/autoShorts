@@ -16,7 +16,7 @@ export interface GeneratedImage {
 export interface DalleImageRequest {
     prompt: string;
     n?: number;
-    size?: '1024x1024' | '1792x1024' | '1024x1792';
+    size?: '256x256' | '512x512' | '1024x1024' | '1792x1024' | '1024x1792';
     quality?: 'standard' | 'hd';
     style?: 'vivid' | 'natural';
 }
@@ -46,13 +46,17 @@ export class ImageGenerationService {
             throw new Error('OpenAI API key is not configured');
         }
 
+        console.log('DALL-E 이미지 생성 시도:', {
+            prompt: request.prompt,
+            size: this.getDalleSize(request.aspectRatio),
+            quality: request.quality
+        });
+
         try {
             const dalleRequest: DalleImageRequest = {
                 prompt: request.prompt,
                 n: 1,
-                size: this.getDalleSize(request.aspectRatio),
-                quality: request.quality || 'standard',
-                style: 'vivid'
+                size: this.getDalleSize(request.aspectRatio)
             };
 
             const response = await axios.post(
@@ -80,8 +84,14 @@ export class ImageGenerationService {
                     createdAt: new Date()
                 }
             };
-        } catch (error) {
+        } catch (error: any) {
             console.error('DALL-E image generation failed:', error);
+            if (error.response) {
+                console.error('DALL-E API 응답 오류:', {
+                    status: error.response.status,
+                    data: error.response.data
+                });
+            }
             throw new Error(`DALL-E image generation failed: ${error}`);
         }
     }
@@ -93,6 +103,11 @@ export class ImageGenerationService {
         if (!this.STABILITY_API_KEY) {
             throw new Error('Stability AI API key is not configured');
         }
+
+        console.log('Stability AI 이미지 생성 시도:', {
+            prompt: request.prompt,
+            size: '1024x1024'
+        });
 
         try {
             const stabilityRequest: StabilityImageRequest = {
@@ -135,8 +150,14 @@ export class ImageGenerationService {
                     createdAt: new Date()
                 }
             };
-        } catch (error) {
+        } catch (error: any) {
             console.error('Stability AI image generation failed:', error);
+            if (error.response) {
+                console.error('Stability AI API 응답 오류:', {
+                    status: error.response.status,
+                    data: error.response.data
+                });
+            }
             throw new Error(`Stability AI image generation failed: ${error}`);
         }
     }
@@ -145,18 +166,30 @@ export class ImageGenerationService {
      * 이미지를 생성합니다 (DALL-E 우선, 실패시 Stability AI 사용).
      */
     public async generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
+        // API 키 확인
+        if (!this.OPENAI_API_KEY && !this.STABILITY_API_KEY) {
+            throw new Error('No image generation API keys configured. Please set OPENAI_API_KEY or STABILITY_API_KEY');
+        }
+
         try {
-            // 먼저 DALL-E로 시도
-            return await this.generateImageWithDalle(request);
+            // DALL-E API 키가 있으면 먼저 시도
+            if (this.OPENAI_API_KEY) {
+                return await this.generateImageWithDalle(request);
+            }
         } catch (error) {
             console.log('DALL-E failed, trying Stability AI...');
-            try {
-                // DALL-E 실패시 Stability AI로 시도
-                return await this.generateImageWithStability(request);
-            } catch (stabilityError) {
-                throw new Error(`Both DALL-E and Stability AI failed. DALL-E error: ${error}, Stability error: ${stabilityError}`);
-            }
         }
+
+        try {
+            // Stability AI API 키가 있으면 시도
+            if (this.STABILITY_API_KEY) {
+                return await this.generateImageWithStability(request);
+            }
+        } catch (stabilityError) {
+            console.error('Stability AI also failed:', stabilityError);
+        }
+
+        throw new Error('Both DALL-E and Stability AI failed. Please check your API keys and try again.');
     }
 
     /**
@@ -180,17 +213,11 @@ export class ImageGenerationService {
 
     /**
      * DALL-E 크기를 결정합니다.
+     * DALL-E는 256x256, 512x512, 1024x1024만 지원합니다.
      */
     private getDalleSize(aspectRatio?: string): DalleImageRequest['size'] {
-        switch (aspectRatio) {
-            case '9:16':
-                return '1024x1792';
-            case '16:9':
-                return '1792x1024';
-            case '1:1':
-            default:
-                return '1024x1024';
-        }
+        // 비용 절약을 위해 512x512 사용 (1024x1024의 절반 가격)
+        return '512x512';
     }
 
     /**
@@ -216,6 +243,35 @@ export class ImageGenerationService {
         // 실제 구현에서는 캐시 시스템을 구현
         // 현재는 null을 반환 (캐시 없음)
         return null;
+    }
+
+    /**
+     * 이미지 생성 비용을 계산합니다.
+     */
+    public calculateImageCost(size: string, quality: string = 'standard'): number {
+        // DALL-E 3 가격 (2024년 기준)
+        const dallePricing = {
+            '256x256': 0.016,
+            '512x512': 0.018,
+            '1024x1024': 0.040,
+            '1792x1024': 0.080,
+            '1024x1792': 0.080
+        };
+
+        // Stability AI 가격 (2024년 기준)
+        const stabilityPricing = {
+            '512x512': 0.002,
+            '768x768': 0.004,
+            '1024x1024': 0.008
+        };
+
+        // DALL-E 3 기준으로 계산 (더 비쌈)
+        const basePrice = dallePricing[size as keyof typeof dallePricing] || 0.040;
+
+        // 품질에 따른 가격 조정
+        const qualityMultiplier = quality === 'hd' ? 1.5 : 1.0;
+
+        return basePrice * qualityMultiplier;
     }
 
     /**

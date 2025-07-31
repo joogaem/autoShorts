@@ -88,9 +88,10 @@ const ScriptPage: React.FC = () => {
             return;
         }
 
-        // 세션에 스크립트 데이터 저장
+        // 세션에 스크립트 데이터 저장 (그룹 정보도 포함)
         setScriptData({
-            scriptResult
+            scriptResult,
+            slideGroups // 그룹 정보도 함께 저장
         });
 
         // TTS 생성 페이지로 이동

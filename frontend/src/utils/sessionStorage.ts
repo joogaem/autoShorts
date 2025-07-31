@@ -14,6 +14,7 @@ export interface GroupData {
 
 export interface ScriptData {
     scriptResult: any;
+    slideGroups?: any[];
 }
 
 export interface TTSData {

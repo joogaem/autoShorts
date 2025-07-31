@@ -97,7 +97,7 @@ const TTSPage: React.FC = () => {
         // 세션에 TTS 데이터 저장 (그룹 정보 포함)
         setTTSData({
             audioResult: ttsResult,
-            slideGroups: scriptData.slideGroups // 그룹 정보도 함께 저장
+            slideGroups: scriptData.slideGroups || [] // 그룹 정보도 함께 저장
         });
 
         // 이미지 생성 페이지로 이동
