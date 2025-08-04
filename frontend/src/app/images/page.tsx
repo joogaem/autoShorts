@@ -34,22 +34,39 @@ const ImagesPage: React.FC = () => {
     }, []);
 
     const generateImageScripts = async () => {
+        console.log('=== generateImageScripts 함수 시작 ===');
+        console.log('audioResult:', audioResult);
+
         if (!audioResult || audioResult.length === 0) {
+            console.error('audioResult가 없거나 비어있음');
             setError('TTS 데이터가 없습니다.');
             return;
         }
+
         setGeneratingScripts(true);
         setError(null);
 
         try {
             console.log('AI 이미지 스크립트 생성 시작...');
+            console.log('처리할 그룹 수:', audioResult.length);
+
             const scriptResults = await Promise.all(
                 audioResult.map(async ({ group, script, audioUrl, duration }, index) => {
-                    console.log(`그룹 ${index + 1}/${audioResult.length} 처리 중:`, group.title);
-                    console.log(`그룹 ${group.title}의 Core Message:`, script.coreMessage ? script.coreMessage.substring(0, 100) + '...' : '없음');
+                    console.log(`=== 그룹 ${index + 1}/${audioResult.length} 처리 시작 ===`);
+                    console.log('그룹 정보:', {
+                        id: group.id,
+                        title: group.title,
+                        slides: group.slides
+                    });
+                    console.log('스크립트 정보:', {
+                        hasCoreMessage: !!script.coreMessage,
+                        coreMessageLength: script.coreMessage?.length || 0,
+                        coreMessage: script.coreMessage ? script.coreMessage.substring(0, 100) + '...' : '없음'
+                    });
 
                     const slideGroups = ttsData?.slideGroups || [];
                     const fullGroup = slideGroups.find((g: any) => g.id === group.id);
+                    console.log('fullGroup 찾기 결과:', fullGroup ? '찾음' : '없음');
 
                     const requestBody = {
                         groups: [fullGroup || { id: group.id, title: group.title, slides: group.slides || [] }],
@@ -60,6 +77,14 @@ const ImagesPage: React.FC = () => {
                         }]
                     };
 
+                    console.log('API 요청 바디:', {
+                        groupsCount: requestBody.groups.length,
+                        slidesCount: requestBody.slides.length,
+                        coreMessagesCount: requestBody.coreMessages.length,
+                        coreMessage: requestBody.coreMessages[0].coreMessage.substring(0, 100) + '...'
+                    });
+
+                    console.log('API 호출 시작...');
                     const scriptResponse = await fetch('http://localhost:3001/api/generate-image-scripts', {
                         method: 'POST',
                         headers: {
@@ -69,29 +94,49 @@ const ImagesPage: React.FC = () => {
                         body: JSON.stringify(requestBody),
                     });
 
+                    console.log('API 응답 상태:', scriptResponse.status, scriptResponse.statusText);
+
                     if (!scriptResponse.ok) {
                         const errorData = await scriptResponse.json();
+                        console.error('API 오류 응답:', errorData);
                         throw new Error(errorData.error || `HTTP ${scriptResponse.status}: ${scriptResponse.statusText}`);
                     }
 
                     const scriptData = await scriptResponse.json();
+                    console.log('API 응답 데이터:', scriptData);
                     console.log(`그룹 ${group.title} 스크립트 생성 완료:`, scriptData.data?.groups?.[0]?.imageScripts?.length || 0, '개');
+
+                    // 동적 프롬프트 확인
+                    const imageScripts = scriptData.data?.groups?.[0]?.imageScripts || [];
+                    console.log('=== 생성된 동적 스크립트 상세 분석 ===');
+                    imageScripts.forEach((script: any, index: number) => {
+                        console.log(`동적 스크립트 ${index + 1}:`, {
+                            id: script.id,
+                            description: script.description,
+                            promptLength: script.prompt?.length || 0,
+                            promptPreview: script.prompt?.substring(0, 150) + '...',
+                            isDynamic: script.prompt?.includes('동적') || script.prompt?.includes('분석') || script.prompt?.includes('구체적') || script.prompt?.includes('watercolor') || script.prompt?.includes('illustration')
+                        });
+                    });
 
                     return {
                         group,
                         script,
                         audioUrl,
                         duration,
-                        imageScripts: scriptData.data?.groups?.[0]?.imageScripts || []
+                        imageScripts: imageScripts
                     };
                 })
             );
 
+            console.log('모든 그룹 처리 완료:', scriptResults.length, '개');
             setImageScripts(scriptResults);
             setShowScripts(true);
             console.log('모든 그룹의 AI 스크립트 생성 완료');
         } catch (e: any) {
-            console.error('AI 이미지 스크립트 생성 오류:', e);
+            console.error('=== AI 이미지 스크립트 생성 오류 ===');
+            console.error('에러 상세:', e);
+            console.error('에러 메시지:', e?.message);
             setError('AI 스크립트 생성 중 오류 발생: ' + (e?.message || e));
         } finally {
             setGeneratingScripts(false);
@@ -324,7 +369,7 @@ const ImagesPage: React.FC = () => {
                                         fontSize: '16px'
                                     }}
                                 >
-                                    {generatingScripts ? 'Core Message 기반 스크립트 생성 중...' : 'Core Message로 스크립트 생성'}
+                                    {generatingScripts ? 'Core Message 기반 동적 스크립트 생성 중...' : 'Core Message로 동적 스크립트 생성'}
                                 </button>
                             )}
                             {showScripts && (
@@ -410,7 +455,7 @@ const ImagesPage: React.FC = () => {
                             color: '#111827',
                             marginBottom: '24px'
                         }}>
-                            이미지 스크립트 미리보기 (Core Message 기반)
+                            동적 이미지 스크립트 미리보기 (Core Message 기반)
                             {imageScripts.length > 0 && (
                                 <span style={{
                                     fontSize: '16px',
@@ -429,12 +474,12 @@ const ImagesPage: React.FC = () => {
                             color: '#6b7280',
                             marginBottom: '24px'
                         }}>
-                            각 그룹의 Core Message를 기반으로 교육적으로 효과적인 4개의 이미지 스크립트를 생성했습니다.
-                            Core Message가 없는 그룹은 그룹 내용을 기반으로 스크립트가 생성됩니다.
+                            각 그룹의 Core Message를 기반으로 동적 분석을 통해 4개의 고품질 이미지 스크립트를 생성했습니다.
+                            Core Message가 없는 그룹은 동적 프롬프트 생성을 위해 Core Message가 필요합니다.
                             필요에 따라 수정한 후 이미지를 생성하세요.
                             {imageScripts.length > 0 && (
                                 <span style={{ color: '#10b981', fontWeight: '600' }}>
-                                    {' '}✓ Core Message 기반 맞춤형 스크립트 생성 완료
+                                    {' '}✓ Core Message 기반 동적 스크립트 생성 완료
                                 </span>
                             )}
                         </p>
@@ -457,7 +502,7 @@ const ImagesPage: React.FC = () => {
                                         color: '#111827',
                                         marginBottom: '16px'
                                     }}>
-                                        {group.title} - 이미지 스크립트 ({imageScripts.filter((s: any) => s.enabled !== false).length}/{imageScripts.length} 활성)
+                                        {group.title} - 동적 이미지 스크립트 ({imageScripts.filter((s: any) => s.enabled !== false).length}/{imageScripts.length} 활성)
                                         {groupScript?.coreMessage ? (
                                             <span style={{
                                                 fontSize: '14px',
@@ -465,16 +510,16 @@ const ImagesPage: React.FC = () => {
                                                 fontWeight: 'normal',
                                                 marginLeft: '8px'
                                             }}>
-                                                ✓ Core Message 기반
+                                                ✓ Core Message 기반 동적 분석
                                             </span>
                                         ) : (
                                             <span style={{
                                                 fontSize: '14px',
-                                                color: '#6b7280',
+                                                color: '#dc2626',
                                                 fontWeight: 'normal',
                                                 marginLeft: '8px'
                                             }}>
-                                                📄 그룹 내용 기반
+                                                ❌ Core Message 필요
                                             </span>
                                         )}
                                     </div>

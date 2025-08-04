@@ -118,8 +118,9 @@ export class VisualAnalysisService {
     }
 
     /**
-     * 이미지 생성 프롬프트를 생성합니다.
-     */
+ * 이미지 생성 프롬프트를 생성합니다.
+ * 한국어 텍스트를 영어 프롬프트로 변환합니다.
+ */
     private generateImagePrompt(textContent: string, slideType: VisualAnalysisResult['slideType']): string {
         const keywords = this.extractKeywords(textContent);
         const basePrompt = keywords.join(', ');

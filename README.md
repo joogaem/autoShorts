@@ -436,4 +436,135 @@ if (coreMessage && coreMessage.trim()) {
 
 ---
 
+# 📅 작업 내역 요약 (2025-08-05) - 오늘의 진행사항
+
+## 🎯 **오늘 완료된 주요 기능**
+
+### **이미지 프롬프트 파싱 시스템 대폭 개선** ✅
+- **기존 문제점**: 한글 텍스트 매칭으로 인한 불안정한 파싱
+- **개선 사항**: 
+  - JSON 파싱 우선 시도 → 마크다운 형식 fallback → 줄바꿈 기반 분할
+  - 다중 fallback 시스템으로 파싱 성공률 대폭 향상
+  - 응답이 잘려도 부분적으로라도 파싱 가능하도록 개선
+  - 상세한 디버깅 로그 추가로 문제 진단 용이
+
+### **AI 프롬프트 템플릿 최적화** ✅
+- **프롬프트 간소화**: 복잡한 설명 제거, 핵심만 요청
+- **명확한 형식 지정**: 정확한 응답 형식 명시
+- **토큰 절약**: 짧고 명확한 지시로 응답 완성도 향상
+- **LangChain f-string 오류 해결**: JSON 예시의 중괄호 이스케이프 처리
+
+### **파싱 로직 완전 재작성** ✅
+- **3단계 파싱 시스템**:
+  1. 완전한 Prompt 패턴 매칭 (4개 모두)
+  2. 부분 Prompt 패턴 매칭 (1-3개)
+  3. 줄바꿈 기반 분할 (최후의 수단)
+- **성공 조건 완화**: 1개라도 파싱되면 성공으로 처리
+- **실시간 디버깅**: 응답 길이, 시작/끝 부분, 매치 개수 로그
+
+### **한글 프롬프트 생성 문제 해결** ✅
+- **문제 발견**: `generateSpecificPrompt` 함수에서 "한국어로 작성" 지시
+- **해결**: 모든 이미지 프롬프트 생성 함수를 영어로 통일
+- **일관성 확보**: DALL-E 3 최적화된 영어 프롬프트로 통일
+
+## 🔧 **기술적 구현 세부사항**
+
+### **개선된 파싱 시스템**
+```typescript
+// 방법 1: 완전한 Prompt 패턴
+const fullMatches = result.match(/=== Prompt\d+ ===\s*([\s\S]*?)(?=== Prompt\d+ ===|$)/g);
+
+// 방법 2: 부분 Prompt 패턴 (1-3개만 있어도 OK)
+const partialMatches = result.match(/=== Prompt\d+ ===\s*([\s\S]*?)(?=== Prompt\d+ ===|$)/g);
+
+// 방법 3: 줄바꿈 기반 분할 (최후의 수단)
+const lines = result.split('\n');
+// ... 줄 단위 분석 로직
+```
+
+### **LangChain 템플릿 수정**
+```typescript
+// JSON 예시의 중괄호 이스케이프 처리
+**Option 1 - JSON format (preferred)**:
+{{
+  "prompts": [
+    "English image prompt for part 1",
+    "English image prompt for part 2", 
+    "English image prompt for part 3",
+    "English image prompt for part 4"
+  ]
+}}
+```
+
+### **프롬프트 템플릿 최적화**
+```typescript
+// 간소화된 프롬프트
+const promptTemplate = PromptTemplate.fromTemplate(`
+    Create 4 short English prompts for DALL-E 3 images.
+    
+    Content: {message}
+    Title: {groupTitle}
+    
+    Write 4 brief prompts, each under 50 words. Include "watercolor style, no text" in each.
+    
+    === Prompt1 ===
+    [Brief prompt 1]
+    
+    === Prompt2 ===
+    [Brief prompt 2]
+    
+    === Prompt3 ===
+    [Brief prompt 3]
+    
+    === Prompt4 ===
+    [Brief prompt 4]
+    `);
+```
+
+## 📊 **해결된 문제들**
+
+### **1. 파싱 실패 문제**
+- **기존**: 한글 "프롬프트" 텍스트 매칭으로 불안정
+- **해결**: 영어 "Prompt" 패턴으로 안정적 파싱
+- **결과**: 파싱 성공률 대폭 향상
+
+### **2. 응답 잘림 문제**
+- **기존**: 토큰 제한으로 응답이 중간에 잘림
+- **해결**: 부분 파싱 시스템으로 일부라도 추출
+- **결과**: 완전하지 않아도 최대한 많은 프롬프트 추출
+
+### **3. LangChain 오류**
+- **기존**: f-string 오류로 템플릿 파싱 실패
+- **해결**: JSON 예시의 중괄호 이스케이프 처리
+- **결과**: 템플릿 정상 작동
+
+### **4. 한글 프롬프트 문제**
+- **기존**: 일부 함수에서 한글로 프롬프트 생성
+- **해결**: 모든 함수를 영어로 통일
+- **결과**: DALL-E 3 최적화된 일관된 프롬프트
+
+## 🚀 **다음 단계 제안**
+
+### **우선순위 1: 비디오 구성 엔진**
+- 이미지, 음성, 자막을 결합한 최종 쇼츠 비디오 생성
+- FFmpeg/Remotion을 통한 자동 타이밍 및 전환 효과
+- **예상 소요시간**: 3-4일
+
+### **우선순위 2: 자막 생성 시스템**
+- TTS와 동기화된 자막 생성
+- SRT/VTT 형식 지원 및 한국어 특화 처리
+- **예상 소요시간**: 2-3일
+
+### **우선순위 3: 배포 및 최적화**
+- Docker 컨테이너화 및 클라우드 배포
+- 성능 최적화 및 에러 처리 강화
+- **예상 소요시간**: 2-3일
+
+---
+
+> **업데이트일:** 2025-08-05  
+> **업데이트 내용:** 이미지 프롬프트 파싱 시스템 대폭 개선, AI 프롬프트 템플릿 최적화, 한글 프롬프트 생성 문제 해결
+
+---
+
 # 📅 작업 내역 요약 (2025-07-08)

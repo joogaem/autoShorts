@@ -56,7 +56,7 @@ export class ImageGenerationService {
             const dalleRequest: DalleImageRequest = {
                 prompt: request.prompt,
                 n: 1,
-                size: this.getDalleSize(request.aspectRatio)
+                size: this.getDalleSize(request.aspectRatio),
             };
 
             const response = await axios.post(
@@ -81,7 +81,7 @@ export class ImageGenerationService {
                     provider: 'dalle',
                     model: 'dall-e-3',
                     size: dalleRequest.size || '1024x1024',
-                    createdAt: new Date()
+                    createdAt: new Date(),
                 }
             };
         } catch (error: any) {
