@@ -5,6 +5,7 @@ export interface UploadData {
     slides: any[];
     parseResult: any;
     visualAnalysisResults?: any[];
+    coreMessages?: any[];
 }
 
 export interface GroupData {

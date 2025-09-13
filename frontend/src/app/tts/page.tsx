@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProgressBar from '../../components/ProgressBar';
 import { getScriptData, setTTSData, clearScriptData } from '../../utils/sessionStorage';
+import { API_URL } from '../../config/env';
 
 const TTSPage: React.FC = () => {
     const router = useRouter();
@@ -39,7 +40,7 @@ const TTSPage: React.FC = () => {
                 scriptResult.map(async ({ group, script }) => {
                     const filename = `script_${Date.now()}_${group.id}`;
 
-                    const response = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/tts/generate', {
+                    const response = await fetch(API_URL + '/api/tts/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -330,7 +331,7 @@ const TTSPage: React.FC = () => {
                                                     marginBottom: '8px'
                                                 }}
                                             >
-                                                <source src={`http://localhost:3001/audio/${audioFile.filename}`} type="audio/mpeg" />
+                                                <source src={`${API_URL}/audio/${audioFile.filename}`} type="audio/mpeg" />
                                                 브라우저가 오디오를 지원하지 않습니다.
                                             </audio>
                                         </div>

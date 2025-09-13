@@ -1,3 +1,126 @@
+# 🎨 AutoShorts - AI 기반 쇼츠 비디오 자동 생성 시스템
+
+## 🚀 **주요 기능**
+
+### **이미지 생성 시스템**
+- **Stable Diffusion (기본)**: Stability AI의 고품질 이미지 생성
+- **DALL-E (백업)**: OpenAI의 DALL-E 3를 백업 서비스로 사용
+- **다양한 모델 지원**: SDXL 1.0, SD 1.6, SD 2.1 등
+- **비용 효율적**: Stable Diffusion이 DALL-E 대비 1/5 비용
+
+### **완전한 워크플로우**
+1. **파일 업로드**: PPTX/PDF 파일 드래그 앤 드롭
+2. **자동 파싱**: PDF/PPTX에서 텍스트 추출 및 5등분 분할
+3. **AI 섹션 다듬기**: GPT-4o를 사용한 쇼츠 비디오용 섹션 최적화
+4. **스크립트 생성**: Hook + Core Message + CTA 구조
+5. **음성 변환**: Google Cloud TTS (한국어 여성 음성)
+6. **이미지 생성**: Stable Diffusion 기반 고품질 이미지
+7. **결과 확인**: 모든 생성된 콘텐츠 통합 미리보기
+
+---
+
+## 🔧 **환경 설정**
+
+### **통합 환경 변수 설정**
+프로젝트 루트에 `.env` 파일을 생성하고 다음 환경 변수들을 설정하세요:
+
+```bash
+# 서버 설정
+PORT=3001
+NODE_ENV=development
+
+# API 키 설정
+# Stability AI (Stable Diffusion) - 기본 이미지 생성 서비스
+STABILITY_API_KEY=your_stability_api_key_here
+
+# OpenAI (DALL-E) - 백업 이미지 생성 서비스
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Google AI (Gemini) - 이미지 생성 및 분석
+GOOGLE_API_KEY=your_google_api_key_here
+
+# Google Cloud TTS 설정
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/google-credentials.json
+GOOGLE_CLOUD_PROJECT_ID=your_google_cloud_project_id
+
+# 디버깅 설정
+TTS_DEBUG=false
+
+# Frontend API URLs
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_UPLOAD_URL=http://localhost:3001/api/upload
+NEXT_PUBLIC_PARSE_URL=http://localhost:3001/api/parse
+NEXT_PUBLIC_GROUP_URL=http://localhost:3001/api/group-slides
+```
+
+### **API 키 설정 방법**
+1. **Stability AI**: [Stability AI](https://platform.stability.ai/)에서 API 키 발급
+2. **OpenAI**: [OpenAI Platform](https://platform.openai.com/)에서 API 키 발급
+3. **Google AI**: [Google AI Studio](https://makersuite.google.com/)에서 API 키 발급
+4. **Google Cloud**: [Google Cloud Console](https://console.cloud.google.com/)에서 TTS API 활성화
+
+### **환경 변수 파일 생성**
+```bash
+# 1. 프로젝트 루트에서 템플릿 파일을 복사
+cp env.example .env
+
+# 2. .env 파일을 편집하여 실제 API 키 값들을 입력
+# 예시:
+# STABILITY_API_KEY=sk-실제_키_값_입력
+# OPENAI_API_KEY=sk-실제_키_값_입력
+# GOOGLE_API_KEY=실제_키_값_입력
+```
+
+### **환경 변수 파일 구조**
+- **`env.example`**: 템플릿 파일 (Git에 포함됨) - 실제 키 값 없음
+- **`.env`**: 실제 환경 변수 파일 (Git에 포함되지 않음) - 실제 키 값 입력
+
+---
+
+## 📡 **API 엔드포인트**
+
+### **이미지 생성**
+```bash
+# Stable Diffusion 전용 이미지 생성
+POST /api/generate-image-stable-diffusion
+{
+  "prompt": "한국어 설명",
+  "model": "stable-diffusion-xl-1024-v1-0", // 선택사항
+  "aspectRatio": "1:1" // 1:1, 16:9, 9:16
+}
+
+# 일반 이미지 생성 (Stable Diffusion 우선, 실패시 DALL-E)
+POST /api/generate-image
+{
+  "prompt": "한국어 설명",
+  "style": "photographic",
+  "aspectRatio": "9:16",
+  "quality": "standard"
+}
+```
+
+### **모델 정보**
+```bash
+# 사용 가능한 Stable Diffusion 모델 조회
+GET /api/stable-diffusion-models
+
+# API 키 상태 확인
+GET /api/check-api-keys
+```
+
+---
+
+## 💰 **비용 비교**
+
+| 서비스 | 512x512 | 1024x1024 | 품질 |
+|--------|---------|------------|------|
+| **Stable Diffusion** | $0.002 | $0.008 | 고품질 |
+| **DALL-E 3** | $0.018 | $0.040 | 고품질 |
+
+**Stable Diffusion이 DALL-E 대비 약 5배 저렴합니다!**
+
+---
+
 # 📅 작업 내역 요약 (2025-07-08)
 
 ## 1. Task Master AI(MCP) 및 GitHub MCP 연동
@@ -44,6 +167,31 @@
 - Task Master 기반 Task 관리 → GitHub Issue 자동화 성공
 - 프로젝트 구조, 환경, 자동화 파이프라인까지 체계적으로 정리
 - 앞으로도 Task Master와 GitHub Issue를 연동하여 효율적인 협업 및 개발 진행 가능
+
+---
+
+# 📅 작업 내역 요약 (2025-09-13) - 최근 업데이트
+
+## 🔧 **코드 정리 및 워크플로우 최적화** ✅
+
+### **1. 불필요한 API 제거 및 워크플로우 단순화**
+- **group-slides API 제거**: 핵심 포인트 추출 로직이 불필요하여 완전 제거
+- **parse.ts 최적화**: PDF/PPTX 파싱 후 직접 5등분 분할 및 AI 섹션 다듬기
+- **워크플로우 단순화**: 파일 업로드 → 파싱 → AI 다듬기 → 완료 (3단계)
+
+### **2. 프론트엔드 컴포넌트 정리**
+- **FileUpload 컴포넌트 단순화**: 파일 업로드와 파싱만 담당하도록 수정
+- **groups 페이지 개선**: parse 결과에서 직접 다듬어진 섹션 추출
+- **불필요한 상태 변수 제거**: 그룹 관련 복잡한 상태 관리 로직 정리
+
+### **3. 백엔드 코드 정리**
+- **라우터 정리**: group-slides 라우트 완전 제거
+- **타입 정의 통합**: 필요한 타입들을 각 파일에서 직접 정의
+- **import 정리**: 삭제된 모듈 참조 제거
+
+### **4. 환경 설정 정리**
+- **환경 변수 정리**: GROUP_URL 등 불필요한 설정 제거
+- **의존성 정리**: 사용하지 않는 라이브러리 참조 제거
 
 ---
 

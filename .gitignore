@@ -10,7 +10,6 @@ dev-debug.log
 node_modules/
 .taskmaster/
 .cursor/
-.env
 
 # Environment variables
 .env

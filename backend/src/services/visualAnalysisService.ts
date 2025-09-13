@@ -10,7 +10,7 @@ export interface VisualAnalysisResult {
 
 export interface ImageGenerationRequest {
     prompt: string;
-    style?: 'realistic' | 'artistic' | 'minimal' | 'professional';
+    style?: 'realistic' | 'artistic' | 'minimal' | 'professional' | 'photographic';
     aspectRatio?: '9:16' | '16:9' | '1:1';
     quality?: 'standard' | 'hd';
 }
@@ -20,7 +20,7 @@ export interface GeneratedImage {
     url: string;
     prompt: string;
     metadata: {
-        provider: 'dalle' | 'stability';
+        provider: 'gemini';
         model: string;
         size: string;
         createdAt: Date;

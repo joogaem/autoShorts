@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProgressBar from '../../components/ProgressBar';
 import { getTTSData, setImageData, clearTTSData } from '../../utils/sessionStorage';
+import { API_URL } from '../../config/env';
 
 const ImagesPage: React.FC = () => {
     const router = useRouter();
@@ -15,6 +16,8 @@ const ImagesPage: React.FC = () => {
     const [showScripts, setShowScripts] = useState(false);
     const [generatingScripts, setGeneratingScripts] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [imageGenerationProgress, setImageGenerationProgress] = useState<{ [groupId: string]: string }>({});
+    const [failedImages, setFailedImages] = useState<string[]>([]);
 
     useEffect(() => {
         // 세션에서 TTS 데이터 가져오기
@@ -85,7 +88,7 @@ const ImagesPage: React.FC = () => {
                     });
 
                     console.log('API 호출 시작...');
-                    const scriptResponse = await fetch('http://localhost:3001/api/generate-image-scripts', {
+                    const scriptResponse = await fetch(API_URL + '/api/generate-image-scripts', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -151,6 +154,8 @@ const ImagesPage: React.FC = () => {
         setGeneratingImages(true);
         setError(null);
         setGeneratedImages([]);
+        setImageGenerationProgress({});
+        setFailedImages([]);
 
         try {
             console.log('이미지 생성 시작...');
@@ -183,7 +188,7 @@ const ImagesPage: React.FC = () => {
                         }]
                     };
 
-                    const response = await fetch('http://localhost:3001/api/generate-images-for-groups', {
+                    const response = await fetch(API_URL + '/api/generate-images-for-groups', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -689,7 +694,7 @@ const ImagesPage: React.FC = () => {
                                             backgroundColor: 'white'
                                         }}>
                                             <img
-                                                src={image.url.startsWith('http') ? image.url : `http://localhost:3001${image.url}`}
+                                                src={image.url.startsWith('http') ? image.url : `${API_URL}${image.url}`}
                                                 alt={`Generated image ${idx + 1}`}
                                                 style={{
                                                     width: '100%',
@@ -712,6 +717,7 @@ const ImagesPage: React.FC = () => {
                                                 <div><strong>프롬프트:</strong> {image.prompt}</div>
                                                 <div><strong>제공자:</strong> {image.metadata.provider}</div>
                                                 <div><strong>모델:</strong> {image.metadata.model}</div>
+                                                <div><strong>크기:</strong> {image.metadata.size}</div>
                                             </div>
                                         </div>
                                     )) : (
@@ -725,6 +731,36 @@ const ImagesPage: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* 진행 상황 표시 */}
+                                {imageGenerationProgress && imageGenerationProgress[group.id] && (
+                                    <div style={{
+                                        padding: '8px 12px',
+                                        backgroundColor: '#f0f9ff',
+                                        border: '1px solid #0ea5e9',
+                                        borderRadius: '6px',
+                                        marginBottom: '12px',
+                                        fontSize: '14px',
+                                        color: '#0369a1'
+                                    }}>
+                                        📊 {imageGenerationProgress[group.id]}
+                                    </div>
+                                )}
+
+                                {/* 실패 상태 표시 */}
+                                {failedImages && failedImages.includes(group.id) && (
+                                    <div style={{
+                                        padding: '8px 12px',
+                                        backgroundColor: '#fef2f2',
+                                        border: '1px solid #dc2626',
+                                        borderRadius: '6px',
+                                        marginBottom: '12px',
+                                        fontSize: '14px',
+                                        color: '#dc2626'
+                                    }}>
+                                        ❌ 이미지 생성에 실패했습니다. 다시 시도해주세요.
+                                    </div>
+                                )}
 
                                 <div style={{
                                     fontSize: '14px',
@@ -765,7 +801,7 @@ const ImagesPage: React.FC = () => {
                             <div style={{ marginTop: '8px', fontSize: '14px' }}>
                                 <p>💡 <strong>해결 방법:</strong></p>
                                 <p>1. 백엔드 폴더에 <code>.env</code> 파일을 생성하세요</p>
-                                <p>2. <code>OPENAI_API_KEY</code> 또는 <code>STABILITY_API_KEY</code>를 설정하세요</p>
+                                <p>2. <code>GOOGLE_API_KEY</code>를 설정하세요</p>
                                 <p>3. 백엔드 서버를 재시작하세요</p>
                             </div>
                         )}

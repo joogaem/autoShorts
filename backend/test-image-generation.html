@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Generation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+        }
+
+        .error {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+
+        .success {
+            border-left-color: #28a745;
+            background-color: #d4edda;
+        }
+
+        .image-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+
+        .api-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .endpoint {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 5px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🖼️ Image Generation Test</h1>
+
+        <div class="api-info">
+            <strong>Available Endpoints:</strong>
+            <div class="endpoint">POST /api/test-image-generation</div>
+            <div class="endpoint">POST /api/test-multiple-images</div>
+            <div class="endpoint">GET /api/test-health</div>
+            <div class="endpoint">GET /api/test-api-keys</div>
+        </div>
+
+        <!-- Single Image Generation -->
+        <div class="form-group">
+            <h3>Single Image Generation</h3>
+            <label for="singlePrompt">Prompt (English):</label>
+            <textarea id="singlePrompt" placeholder="Enter your image generation prompt in English..."></textarea>
+
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <div style="flex: 1;">
+                    <label for="singleStyle">Style:</label>
+                    <select id="singleStyle">
+                        <option value="professional">Professional</option>
+                        <option value="artistic">Artistic</option>
+                        <option value="cartoon">Cartoon</option>
+                        <option value="photographic">Photographic</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="singleAspectRatio">Aspect Ratio:</label>
+                    <select id="singleAspectRatio">
+                        <option value="9:16">9:16 (Portrait)</option>
+                        <option value="16:9">16:9 (Landscape)</option>
+                        <option value="1:1">1:1 (Square)</option>
+                        <option value="4:3">4:3 (Standard)</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="singleQuality">Quality:</label>
+                    <select id="singleQuality">
+                        <option value="standard">Standard</option>
+                        <option value="hd">HD</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="generateSingleImage()" id="singleBtn">Generate Single Image</button>
+        </div>
+
+        <!-- Multiple Images Generation -->
+        <div class="form-group">
+            <h3>Multiple Images Generation</h3>
+            <label for="multiplePrompts">Prompts (One per line):</label>
+            <textarea id="multiplePrompts" placeholder="Enter multiple prompts, one per line..."></textarea>
+
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <div style="flex: 1;">
+                    <label for="multipleStyle">Style:</label>
+                    <select id="multipleStyle">
+                        <option value="professional">Professional</option>
+                        <option value="artistic">Artistic</option>
+                        <option value="cartoon">Cartoon</option>
+                        <option value="photographic">Photographic</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="multipleAspectRatio">Aspect Ratio:</label>
+                    <select id="multipleAspectRatio">
+                        <option value="9:16">9:16 (Portrait)</option>
+                        <option value="16:9">16:9 (Landscape)</option>
+                        <option value="1:1">1:1 (Square)</option>
+                        <option value="4:3">4:3 (Standard)</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="multipleQuality">Quality:</label>
+                    <select id="multipleQuality">
+                        <option value="standard">Standard</option>
+                        <option value="hd">HD</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="generateMultipleImages()" id="multipleBtn">Generate Multiple Images</button>
+        </div>
+
+        <!-- Health Check -->
+        <div class="form-group">
+            <button onclick="checkHealth()">Check Service Health</button>
+            <button onclick="checkApiKeys()">Check API Keys</button>
+        </div>
+
+        <!-- Results -->
+        <div id="result" class="result" style="display: none;"></div>
+        <div id="images" class="image-container"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+
+        async function generateSingleImage() {
+            const prompt = document.getElementById('singlePrompt').value.trim();
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            const btn = document.getElementById('singleBtn');
+            const resultDiv = document.getElementById('result');
+            const imagesDiv = document.getElementById('images');
+
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            resultDiv.style.display = 'none';
+            imagesDiv.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/test-image-generation`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        style: document.getElementById('singleStyle').value,
+                        aspectRatio: document.getElementById('singleAspectRatio').value,
+                        quality: document.getElementById('singleQuality').value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <h4>✅ Image Generated Successfully!</h4>
+                        <p><strong>Prompt:</strong> ${prompt}</p>
+                        <p><strong>Cost:</strong> $${data.data.cost || 'N/A'}</p>
+                        <p><strong>Timestamp:</strong> ${data.testInfo.timestamp}</p>
+                    `;
+
+                    if (data.data.imageUrl) {
+                        imagesDiv.innerHTML = `
+                            <h4>Generated Image:</h4>
+                            <img src="${data.data.imageUrl}" alt="Generated Image" />
+                        `;
+                    }
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <h4>❌ Generation Failed</h4>
+                        <p><strong>Error:</strong> ${data.error}</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h4>❌ Request Failed</h4>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Single Image';
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        async function generateMultipleImages() {
+            const promptsText = document.getElementById('multiplePrompts').value.trim();
+            if (!promptsText) {
+                alert('Please enter prompts');
+                return;
+            }
+
+            const prompts = promptsText.split('\n').filter(p => p.trim());
+            if (prompts.length === 0) {
+                alert('Please enter at least one valid prompt');
+                return;
+            }
+
+            const btn = document.getElementById('multipleBtn');
+            const resultDiv = document.getElementById('result');
+            const imagesDiv = document.getElementById('images');
+
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            resultDiv.style.display = 'none';
+            imagesDiv.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/test-multiple-images`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompts: prompts,
+                        style: document.getElementById('multipleStyle').value,
+                        aspectRatio: document.getElementById('multipleAspectRatio').value,
+                        quality: document.getElementById('multipleQuality').value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <h4>✅ Multiple Images Generated Successfully!</h4>
+                        <p><strong>Total Generated:</strong> ${data.data.totalGenerated}</p>
+                        <p><strong>Success Count:</strong> ${data.data.successCount}</p>
+                        <p><strong>Failed Count:</strong> ${data.data.failedCount}</p>
+                        <p><strong>Timestamp:</strong> ${data.testInfo.timestamp}</p>
+                    `;
+
+                    if (data.data.images && data.data.images.length > 0) {
+                        let imagesHtml = '<h4>Generated Images:</h4>';
+                        data.data.images.forEach((img, index) => {
+                            if (img.success && img.imageUrl) {
+                                imagesHtml += `
+                                    <div style="margin: 20px 0;">
+                                        <h5>Image ${index + 1}: ${prompts[index]}</h5>
+                                        <img src="${img.imageUrl}" alt="Generated Image ${index + 1}" />
+                                    </div>
+                                `;
+                            }
+                        });
+                        imagesDiv.innerHTML = imagesHtml;
+                    }
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <h4>❌ Generation Failed</h4>
+                        <p><strong>Error:</strong> ${data.error}</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h4>❌ Request Failed</h4>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Multiple Images';
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/test-health`);
+                const data = await response.json();
+
+                const resultDiv = document.getElementById('result');
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = `
+                    <h4>✅ Service Health Check</h4>
+                    <p><strong>Status:</strong> ${data.message}</p>
+                    <p><strong>Timestamp:</strong> ${data.timestamp}</p>
+                    <h5>Available Endpoints:</h5>
+                    <ul>
+                        ${Object.entries(data.endpoints).map(([endpoint, desc]) =>
+                    `<li><code>${endpoint}</code> - ${desc}</li>`
+                ).join('')}
+                    </ul>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                const resultDiv = document.getElementById('result');
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h4>❌ Health Check Failed</h4>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        async function checkApiKeys() {
+            try {
+                const response = await fetch(`${API_BASE}/test-api-keys`);
+                const data = await response.json();
+
+                const resultDiv = document.getElementById('result');
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = `
+                    <h4>🔑 API Keys Status</h4>
+                    <p><strong>OpenAI:</strong> ${data.data.openai.configured ? '✅ Configured' : '❌ Not Configured'}</p>
+                    <p><strong>Stability AI:</strong> ${data.data.stability.configured ? '✅ Configured' : '❌ Not Configured'}</p>
+                    <p><strong>Has Any Key:</strong> ${data.data.hasAnyKey ? '✅ Yes' : '❌ No'}</p>
+                    <p><strong>Message:</strong> ${data.message}</p>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                const resultDiv = document.getElementById('result');
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <h4>❌ API Keys Check Failed</h4>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        // Set default prompts for testing
+        document.getElementById('singlePrompt').value = 'A cute cartoon cat sitting on a colorful bookshelf, reading a book, warm lighting, educational style';
+        document.getElementById('multiplePrompts').value = 'A friendly teacher pointing at a whiteboard with math equations\nStudents raising their hands in a bright classroom\nA group of children working together on a science project\nA happy student celebrating after solving a difficult problem';
+    </script>
+</body>
+
+</html>

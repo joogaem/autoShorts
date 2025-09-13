@@ -3,13 +3,30 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProgressBar from '../../components/ProgressBar';
+import RefinedSectionDisplay from '../../components/RefinedSectionDisplay';
 import { getUploadData, setGroupData, clearUploadData } from '../../utils/sessionStorage';
+import { API_URL } from '../../config/env';
+
+interface KeyPoint {
+    id: string;
+    title: string;
+    content: string;
+    estimatedDuration: number;
+    thumbnail?: string;
+    // 다듬어진 섹션 정보
+    originalText?: string;
+    keyPoints?: string[];
+    summary?: string;
+    refinedText?: string;
+    sectionType?: 'introduction' | 'main-point-1' | 'main-point-2' | 'main-point-3' | 'conclusion';
+}
 
 const GroupsPage: React.FC = () => {
     const router = useRouter();
     const [uploadData, setUploadDataState] = useState<any>(null);
-    const [slideGroups, setSlideGroups] = useState<any[]>([]);
-    const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+    const [keyPoints, setKeyPoints] = useState<KeyPoint[]>([]);
+    const [editingKeyPoint, setEditingKeyPoint] = useState<string | null>(null);
+    const [editingContent, setEditingContent] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -24,49 +41,66 @@ const GroupsPage: React.FC = () => {
 
         setUploadDataState(data);
 
-        // 그룹핑 데이터 가져오기
-        const fetchGroups = async () => {
+        // 파싱 결과에서 다듬어진 섹션 추출
+        const extractRefinedSections = () => {
             try {
-                const groupRes = await fetch(process.env.NEXT_PUBLIC_GROUP_URL || 'http://localhost:3001/api/group-slides', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: data.filename }),
-                });
-                const groupData = await groupRes.json();
+                if (data.slides && Array.isArray(data.slides)) {
+                    // parse.ts에서 반환된 다듬어진 섹션을 KeyPoint 형태로 변환
+                    const refinedSections = data.slides.map((slide: any, index: number) => ({
+                        id: `section-${index + 1}`,
+                        title: slide.title || `섹션 ${index + 1}`,
+                        content: slide.text || slide.refinedText || '',
+                        estimatedDuration: 60, // 기본값
+                        originalText: slide.originalText || slide.text || '',
+                        keyPoints: slide.keyPoints || [],
+                        summary: slide.summary || '',
+                        refinedText: slide.refinedText || slide.text || '',
+                        sectionType: slide.sectionType || (index === 0 ? 'introduction' :
+                            index === 1 ? 'main-point-1' :
+                                index === 2 ? 'main-point-2' :
+                                    index === 3 ? 'main-point-3' : 'conclusion')
+                    }));
 
-                if (groupRes.ok && groupData.data && Array.isArray(groupData.data.groups)) {
-                    setSlideGroups(groupData.data.groups);
+                    setKeyPoints(refinedSections);
                 } else {
-                    setError('그룹핑 실패: ' + (groupData.error || 'Unknown error'));
+                    setError('다듬어진 섹션 데이터가 없습니다.');
                 }
             } catch (e: any) {
-                setError('그룹핑 요청 중 오류 발생: ' + (e?.message || e));
+                setError('섹션 데이터 처리 중 오류 발생: ' + (e?.message || e));
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchGroups();
+        extractRefinedSections();
     }, []);
 
-    const handleGroupSelect = (groupId: string) => {
-        setSelectedGroups(prev =>
-            prev.includes(groupId)
-                ? prev.filter(id => id !== groupId)
-                : [...prev, groupId]
-        );
+    const handleEditStart = (keyPoint: KeyPoint) => {
+        setEditingKeyPoint(keyPoint.id);
+        setEditingContent(keyPoint.content);
+    };
+
+    const handleEditSave = () => {
+        if (editingKeyPoint) {
+            setKeyPoints(prev => prev.map(kp =>
+                kp.id === editingKeyPoint
+                    ? { ...kp, content: editingContent, title: editingContent.length > 50 ? editingContent.substring(0, 50) + '...' : editingContent }
+                    : kp
+            ));
+            setEditingKeyPoint(null);
+            setEditingContent('');
+        }
+    };
+
+    const handleEditCancel = () => {
+        setEditingKeyPoint(null);
+        setEditingContent('');
     };
 
     const handleContinue = () => {
-        if (selectedGroups.length === 0) {
-            setError('최소 하나의 그룹을 선택해주세요.');
-            return;
-        }
-
-        // 세션에 그룹 데이터 저장
+        // 세션에 중요 내용 데이터 저장
         setGroupData({
-            selectedGroups,
-            slideGroups
+            keyPoints
         });
 
         // 스크립트 생성 페이지로 이동
@@ -94,8 +128,8 @@ const GroupsPage: React.FC = () => {
                         borderRadius: '12px',
                         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                     }}>
-                        <div style={{ fontSize: '24px', marginBottom: '16px' }}>🔄</div>
-                        <div style={{ fontSize: '18px', color: '#374151' }}>그룹을 불러오는 중...</div>
+                        <div style={{ fontSize: '24px', marginBottom: '16px' }}>🔍</div>
+                        <div style={{ fontSize: '18px', color: '#374151' }}>중요 내용을 분석하는 중...</div>
                     </div>
                 </div>
             </div>
@@ -159,13 +193,13 @@ const GroupsPage: React.FC = () => {
                         color: '#111827',
                         marginBottom: '16px'
                     }}>
-                        그룹 선택
+                        다듬어진 5개 섹션 확인 및 편집
                     </h1>
                     <p style={{
                         fontSize: '18px',
                         color: '#6b7280'
                     }}>
-                        처리할 쇼츠 그룹을 선택해주세요
+                        AI가 다듬어준 5개의 섹션을 확인하고 필요시 편집해주세요
                     </p>
                 </div>
 
@@ -187,90 +221,204 @@ const GroupsPage: React.FC = () => {
                             fontWeight: '600',
                             color: '#111827'
                         }}>
-                            쇼츠 그룹 ({slideGroups.length}개)
+                            다듬어진 섹션 ({keyPoints.length}개)
                         </h2>
-                        <div style={{
-                            fontSize: '14px',
-                            color: '#6b7280'
-                        }}>
-                            {selectedGroups.length}개 선택됨
-                        </div>
                     </div>
 
+                    {/* 다듬어진 섹션 개요 표시 */}
+                    <RefinedSectionDisplay
+                        sections={keyPoints.map((kp, index) => ({
+                            id: index + 1,
+                            title: kp.title || `섹션 ${index + 1}`,
+                            keyPoints: kp.keyPoints || [],
+                            summary: kp.summary || '',
+                            refinedText: kp.content || '',
+                            originalText: kp.originalText || kp.content || '',
+                            sectionType: index === 0 ? 'introduction' :
+                                index === 1 ? 'main-point-1' :
+                                    index === 2 ? 'main-point-2' :
+                                        index === 3 ? 'main-point-3' : 'conclusion'
+                        }))}
+                        showDetails={false}
+                    />
+
                     <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                        gap: '24px'
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '24px',
+                        marginTop: '24px'
                     }}>
-                        {slideGroups.map((group) => (
+                        {keyPoints.map((keyPoint, index) => (
                             <div
-                                key={group.id}
+                                key={keyPoint.id}
                                 style={{
-                                    border: selectedGroups.includes(group.id) ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                                    border: '1px solid #e5e7eb',
                                     borderRadius: '12px',
-                                    padding: '20px',
-                                    cursor: 'pointer',
-                                    backgroundColor: selectedGroups.includes(group.id) ? '#eff6ff' : 'white',
-                                    transition: 'all 0.2s ease'
+                                    padding: '24px',
+                                    backgroundColor: '#fafafa'
                                 }}
-                                onClick={() => handleGroupSelect(group.id)}
                             >
                                 <div style={{
                                     display: 'flex',
-                                    alignItems: 'center',
-                                    marginBottom: '12px'
+                                    justifyContent: 'space-between',
+                                    alignItems: 'flex-start',
+                                    marginBottom: '16px'
                                 }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedGroups.includes(group.id)}
-                                        onChange={() => handleGroupSelect(group.id)}
-                                        style={{
-                                            marginRight: '12px',
-                                            transform: 'scale(1.2)'
-                                        }}
-                                    />
-                                    <h3 style={{
-                                        fontSize: '18px',
+                                    <div style={{
+                                        fontSize: '16px',
                                         fontWeight: '600',
-                                        color: '#111827',
-                                        margin: 0
+                                        color: '#3b82f6',
+                                        backgroundColor: '#eff6ff',
+                                        padding: '4px 12px',
+                                        borderRadius: '20px'
                                     }}>
-                                        {group.title}
-                                    </h3>
+                                        {keyPoint.title || `섹션 ${index + 1}`}
+                                    </div>
+                                    <div style={{
+                                        fontSize: '14px',
+                                        color: '#6b7280'
+                                    }}>
+                                        예상 {keyPoint.estimatedDuration}초
+                                    </div>
                                 </div>
 
-                                <div style={{
-                                    fontSize: '14px',
-                                    color: '#6b7280',
-                                    marginBottom: '12px'
-                                }}>
-                                    {group.slides.length}개 슬라이드 • 예상 {group.estimatedDuration}초
-                                </div>
+                                {editingKeyPoint === keyPoint.id ? (
+                                    <div>
+                                        <textarea
+                                            value={editingContent}
+                                            onChange={(e) => setEditingContent(e.target.value)}
+                                            style={{
+                                                width: '100%',
+                                                minHeight: '120px',
+                                                padding: '12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                fontFamily: 'inherit',
+                                                resize: 'vertical',
+                                                marginBottom: '12px'
+                                            }}
+                                            placeholder="중요 내용을 입력하세요..."
+                                        />
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '8px',
+                                            justifyContent: 'flex-end'
+                                        }}>
+                                            <button
+                                                onClick={handleEditCancel}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    backgroundColor: '#6b7280',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px'
+                                                }}
+                                            >
+                                                취소
+                                            </button>
+                                            <button
+                                                onClick={handleEditSave}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    backgroundColor: '#3b82f6',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px'
+                                                }}
+                                            >
+                                                저장
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div style={{
+                                            fontSize: '16px',
+                                            fontWeight: '500',
+                                            color: '#111827',
+                                            marginBottom: '8px'
+                                        }}>
+                                            {keyPoint.title}
+                                        </div>
 
-                                {group.thumbnail && (
-                                    <img
-                                        src={`http://localhost:3001${group.thumbnail}`}
-                                        alt={group.title}
-                                        style={{
-                                            width: '100%',
-                                            height: '120px',
-                                            objectFit: 'cover',
-                                            borderRadius: '8px',
-                                            border: '1px solid #e5e7eb'
-                                        }}
-                                        onError={(e) => {
-                                            e.currentTarget.style.display = 'none';
-                                        }}
-                                    />
+                                        {/* 핵심 포인트 표시 */}
+                                        {keyPoint.keyPoints && keyPoint.keyPoints.length > 0 && (
+                                            <div style={{ marginBottom: '12px' }}>
+                                                <div style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: '600',
+                                                    color: '#6b7280',
+                                                    marginBottom: '4px'
+                                                }}>
+                                                    핵심 포인트:
+                                                </div>
+                                                <ul style={{
+                                                    margin: 0,
+                                                    paddingLeft: '16px',
+                                                    fontSize: '12px',
+                                                    color: '#4b5563'
+                                                }}>
+                                                    {keyPoint.keyPoints.map((point, idx) => (
+                                                        <li key={idx} style={{ marginBottom: '2px' }}>
+                                                            {point}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        {/* 요약 표시 */}
+                                        {keyPoint.summary && (
+                                            <div style={{ marginBottom: '12px' }}>
+                                                <div style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: '600',
+                                                    color: '#6b7280',
+                                                    marginBottom: '4px'
+                                                }}>
+                                                    요약:
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '12px',
+                                                    color: '#4b5563',
+                                                    lineHeight: '1.4',
+                                                    fontStyle: 'italic'
+                                                }}>
+                                                    {keyPoint.summary}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div style={{
+                                            fontSize: '14px',
+                                            color: '#374151',
+                                            lineHeight: '1.6',
+                                            marginBottom: '12px',
+                                            whiteSpace: 'pre-wrap'
+                                        }}>
+                                            {keyPoint.content}
+                                        </div>
+                                        <button
+                                            onClick={() => handleEditStart(keyPoint)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                backgroundColor: '#f3f4f6',
+                                                color: '#374151',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '12px'
+                                            }}
+                                        >
+                                            ✏️ 편집
+                                        </button>
+                                    </div>
                                 )}
-
-                                <div style={{
-                                    fontSize: '12px',
-                                    color: '#9ca3af',
-                                    marginTop: '8px'
-                                }}>
-                                    슬라이드: {group.slides.join(', ')}
-                                </div>
                             </div>
                         ))}
                     </div>
@@ -298,14 +446,13 @@ const GroupsPage: React.FC = () => {
 
                     <button
                         onClick={handleContinue}
-                        disabled={selectedGroups.length === 0}
                         style={{
                             padding: '12px 24px',
-                            backgroundColor: selectedGroups.length === 0 ? '#d1d5db' : '#3b82f6',
+                            backgroundColor: '#3b82f6',
                             color: 'white',
                             border: 'none',
                             borderRadius: '8px',
-                            cursor: selectedGroups.length === 0 ? 'not-allowed' : 'pointer',
+                            cursor: 'pointer',
                             fontSize: '16px'
                         }}
                     >

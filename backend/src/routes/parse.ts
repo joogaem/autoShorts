@@ -5,6 +5,7 @@ import fs from 'fs';
 import pdfParse from 'pdf-parse';
 // @ts-ignore
 import pptx2json from 'pptx2json';
+import SectionRefinerService from '../services/sectionRefiner';
 
 const router = express.Router();
 
@@ -170,21 +171,50 @@ router.post('/', async (req: Request, res: Response) => {
                 return;
             }
 
-            console.log('PDF 텍스트 분할 시작');
-            // PDF 텍스트를 페이지별로 분할
-            const pageTexts = splitPdfTextIntoPages(pdfData.text, pdfData.numpages);
+            console.log('PDF 텍스트 5등분 시작');
+            // PDF 텍스트를 5개로 균등 분할
+            const splitIntoFive = (text: string): string[] => {
+                if (!text || text.trim() === '') {
+                    return Array(5).fill('');
+                }
+                const lines = text.split('\n').filter(line => line.trim() !== '');
+                if (lines.length === 0) {
+                    return Array(5).fill('');
+                }
+                const linesPerSection = Math.ceil(lines.length / 5);
+                const sections: string[] = [];
+                for (let i = 0; i < 5; i++) {
+                    const startIndex = i * linesPerSection;
+                    const endIndex = Math.min((i + 1) * linesPerSection, lines.length);
+                    const sectionLines = lines.slice(startIndex, endIndex);
+                    sections.push(sectionLines.join('\n').trim());
+                }
+                return sections;
+            };
 
-            console.log('페이지별 텍스트 분할 결과:', pageTexts.map((text, i) => ({
-                page: i + 1,
+            const fiveSections = splitIntoFive(pdfData.text);
+            console.log('5개 섹션 분할 결과:', fiveSections.map((text, i) => ({
+                section: i + 1,
                 length: text.length,
                 preview: text.substring(0, 100)
             })));
 
+            console.log('섹션 다듬기 시작');
+            // 섹션 다듬기 서비스 사용
+            const sectionRefiner = SectionRefinerService.getInstance();
+            const refinedSections = await sectionRefiner.refineSections(fiveSections);
+            console.log('섹션 다듬기 완료');
+
             console.log('슬라이드 구조 변환 시작');
-            // PowerPoint와 동일한 출력 구조로 변환
-            const slides = pageTexts.map((pageText, pageIndex) => ({
-                id: pageIndex + 1,
-                text: pageText,
+            // 다듬어진 섹션을 슬라이드로 변환
+            const slides = refinedSections.map((refinedSection) => ({
+                id: refinedSection.id,
+                text: refinedSection.refinedText,
+                originalText: refinedSection.originalText,
+                title: refinedSection.title,
+                keyPoints: refinedSection.keyPoints,
+                summary: refinedSection.summary,
+                sectionType: refinedSection.sectionType,
                 images: [], // PDF에서는 이미지 추출이 복잡하므로 일단 빈 배열
                 hasVisuals: false // PDF에서는 이미지 추출이 복잡하므로 일단 false
             }));

@@ -1,6 +1,21 @@
 import express, { Request, Response } from 'express';
 import ScriptGeneratorService from '../services/scriptGenerator';
-import { groupSlides, Slide, SlideGroup } from './group-slides';
+
+// 타입 정의
+interface Slide {
+    id: number;
+    text: string;
+    images: string[];
+    hasVisuals: boolean;
+}
+
+interface KeyPoint {
+    id: string;
+    title: string;
+    content: string;
+    estimatedDuration: number;
+    thumbnail?: string;
+}
 
 const router = express.Router();
 
@@ -10,57 +25,95 @@ router.post('/', async (req: Request, res: Response) => {
     console.log('요청 본문:', req.body);
 
     try {
-        const { slides, style, tone, targetDuration } = req.body;
+        const { keyPoints, sections, style, tone, targetDuration } = req.body;
 
-        // 필수 파라미터 검증
-        if (!slides || !Array.isArray(slides) || slides.length === 0) {
-            console.error('스크립트 생성 오류: slides가 없거나 유효하지 않음');
+        // sections 또는 keyPoints 중 하나는 필수
+        if (!sections && (!keyPoints || !Array.isArray(keyPoints) || keyPoints.length === 0)) {
+            console.error('스크립트 생성 오류: sections 또는 keyPoints가 필요함');
             res.status(400).json({
-                error: 'slides is required and must be a non-empty array'
+                error: 'Either sections or keyPoints is required'
             });
             return;
         }
 
         console.log('스크립트 생성 파라미터:', {
-            slidesCount: slides.length,
+            hasSections: !!sections,
+            sectionsCount: sections?.length || 0,
+            hasKeyPoints: !!keyPoints,
+            keyPointsCount: keyPoints?.length || 0,
             style,
             tone,
             targetDuration
         });
 
-        // 슬라이드 데이터 검증
-        const validSlides = slides.every((slide: any) =>
-            slide.id &&
-            typeof slide.text === 'string' &&
-            Array.isArray(slide.images) &&
-            typeof slide.hasVisuals === 'boolean'
-        );
+        let script: any;
 
-        if (!validSlides) {
-            console.error('스크립트 생성 오류: 슬라이드 데이터 형식이 유효하지 않음');
-            res.status(400).json({
-                error: 'Invalid slide data format. Each slide must have id, text, images, and hasVisuals properties.'
+        // sections가 있는 경우 (새로운 방식)
+        if (sections && Array.isArray(sections) && sections.length > 0) {
+            // sections 데이터 검증
+            const validSections = sections.every((section: any) => typeof section === 'string' && section.trim().length > 0);
+
+            if (!validSections) {
+                console.error('스크립트 생성 오류: sections 데이터 형식이 유효하지 않음');
+                res.status(400).json({
+                    error: 'Invalid sections data format. Each section must be a non-empty string.'
+                });
+                return;
+            }
+
+            // sections를 기반으로 스크립트 생성
+            const scriptService = ScriptGeneratorService.getInstance();
+            const scriptRequest = {
+                sections: sections,
+                style: style || 'educational',
+                tone: tone || 'friendly',
+                targetDuration: targetDuration || 60
+            };
+
+            console.log('스크립트 생성 요청 (sections):', {
+                sectionsCount: sections.length,
+                style: scriptRequest.style,
+                tone: scriptRequest.tone,
+                targetDuration: scriptRequest.targetDuration
             });
-            return;
+
+            script = await scriptService.generateScriptFromSections(scriptRequest);
+        } else {
+            // 기존 keyPoints 방식
+            // 중요 내용 데이터 검증
+            const validKeyPoints = keyPoints.every((keyPoint: any) =>
+                keyPoint.id &&
+                typeof keyPoint.title === 'string' &&
+                typeof keyPoint.content === 'string' &&
+                typeof keyPoint.estimatedDuration === 'number'
+            );
+
+            if (!validKeyPoints) {
+                console.error('스크립트 생성 오류: 중요 내용 데이터 형식이 유효하지 않음');
+                res.status(400).json({
+                    error: 'Invalid keyPoints data format. Each keyPoint must have id, title, content, and estimatedDuration properties.'
+                });
+                return;
+            }
+
+            // 중요 내용을 기반으로 스크립트 생성
+            const scriptService = ScriptGeneratorService.getInstance();
+            const scriptRequest = {
+                keyPoints: keyPoints,
+                style: style || 'educational',
+                tone: tone || 'friendly',
+                targetDuration: targetDuration || 60
+            };
+
+            console.log('스크립트 생성 요청 (keyPoints):', {
+                keyPointsCount: keyPoints.length,
+                style: scriptRequest.style,
+                tone: scriptRequest.tone,
+                targetDuration: scriptRequest.targetDuration
+            });
+
+            script = await scriptService.generateScript(scriptRequest);
         }
-
-        // 단일 그룹으로 처리 (이미 프론트엔드에서 그룹화된 슬라이드들)
-        const scriptService = ScriptGeneratorService.getInstance();
-        const scriptRequest = {
-            slides: slides,
-            style: style || 'educational',
-            tone: tone || 'friendly',
-            targetDuration: targetDuration || 60
-        };
-
-        console.log('스크립트 생성 요청:', {
-            slidesCount: slides.length,
-            style: scriptRequest.style,
-            tone: scriptRequest.tone,
-            targetDuration: scriptRequest.targetDuration
-        });
-
-        const script = await scriptService.generateScript(scriptRequest);
 
         // 단일 스크립트 결과 반환
         res.json({

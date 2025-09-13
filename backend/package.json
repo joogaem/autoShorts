@@ -20,15 +20,16 @@
   },
   "dependencies": {
     "@google-cloud/text-to-speech": "^6.2.0",
+    "@google/generative-ai": "^0.24.1",
     "@langchain/core": "^0.3.66",
     "@langchain/openai": "^0.6.2",
     "cors": "^2.8.5",
-    "dotenv": "^17.1.0",
+    "dotenv": "^17.2.2",
     "elevenlabs-node": "^2.0.3",
     "express": "^5.1.0",
     "langchain": "^0.3.30",
     "multer": "^2.0.1",
-    "openai": "^5.10.1",
-    "pptx2json": "0.0.10"
+    "pptx2json": "0.0.10",
+    "zod": "^3.22.4"
   }
 }

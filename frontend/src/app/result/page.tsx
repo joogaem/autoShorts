@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ProgressBar from '../../components/ProgressBar';
 import { getImageData, clearAllSessionData } from '../../utils/sessionStorage';
+import { API_URL } from '../../config/env';
 
 const ResultPage: React.FC = () => {
     const router = useRouter();
@@ -198,7 +199,7 @@ const ResultPage: React.FC = () => {
                                             width: '100%'
                                         }}
                                     >
-                                        <source src={`http://localhost:3001${audioUrl}`} type="audio/mpeg" />
+                                        <source src={`${API_URL}${audioUrl}`} type="audio/mpeg" />
                                         브라우저가 오디오를 지원하지 않습니다.
                                     </audio>
                                 </div>
@@ -226,7 +227,7 @@ const ResultPage: React.FC = () => {
                                                 backgroundColor: 'white'
                                             }}>
                                                 <img
-                                                    src={`http://localhost:3001${image.url}`}
+                                                    src={`${API_URL}${image.url}`}
                                                     alt={`Generated image ${idx + 1}`}
                                                     style={{
                                                         width: '100%',
