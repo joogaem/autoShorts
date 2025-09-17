@@ -49,12 +49,12 @@ export class ImageGenerationService {
                 model: 'dall-e-3'
             });
 
-            // DALL-E 3 이미지 생성 요청
+            // DALL-E 3 이미지 생성 요청 (9:16 세로형 고정)
             const response = await this.openai.images.generate({
                 model: 'dall-e-3',
                 prompt: imagePrompt,
-                size: this.getDallESize(request.aspectRatio),
-                quality: request.quality || 'standard',
+                size: '1024x1792', // 9:16 세로형 고정
+                quality: 'standard', // 표준 품질 고정
                 n: 1,
             });
 
@@ -82,7 +82,7 @@ export class ImageGenerationService {
                 metadata: {
                     provider: 'dall-e',
                     model: 'dall-e-3',
-                    size: this.getDallESize(request.aspectRatio),
+                    size: '1024x1792', // 9:16 세로형 고정
                     createdAt: new Date()
                 }
             };
@@ -138,28 +138,6 @@ export class ImageGenerationService {
     }
 
     /**
-     * DALL-E 이미지 크기를 결정합니다.
-     */
-    private getDallESize(aspectRatio?: string): '1024x1024' | '1792x1024' | '1024x1792' {
-        if (!aspectRatio) {
-            return '1024x1024'; // 기본 정사각형
-        }
-
-        // DALL-E 3에서 지원하는 크기들
-        switch (aspectRatio) {
-            case '16:9':
-                return '1792x1024'; // 16:9 비율 (가로형)
-            case '9:16':
-                return '1024x1792'; // 9:16 비율 (세로형)
-            case '4:3':
-            case '3:4':
-            case '1:1':
-            default:
-                return '1024x1024'; // 정사각형
-        }
-    }
-
-    /**
      * 여러 이미지를 일괄 생성합니다.
      */
     public async generateMultipleImages(requests: ImageGenerationRequest[]): Promise<GeneratedImage[]> {
@@ -194,11 +172,11 @@ export class ImageGenerationService {
             if (!response.ok) {
                 throw new Error(`Failed to download image: ${response.statusText}`);
             }
-            
+
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             const mimeType = response.headers.get('content-type') || 'image/png';
-            
+
             return `data:${mimeType};base64,${buffer.toString('base64')}`;
         } catch (error) {
             console.error('❌ 이미지 다운로드 실패:', error);
@@ -243,12 +221,12 @@ export class ImageGenerationService {
     }
 
     /**
-     * 플레이스홀더 이미지를 생성합니다.
+     * 플레이스홀더 이미지를 생성합니다 (9:16 세로형 고정).
      */
     private generatePlaceholderImage(aspectRatio: string, prompt: string): string {
-        // SVG 플레이스홀더 이미지 생성
-        const width = aspectRatio === '9:16' ? 1080 : 1024;
-        const height = aspectRatio === '9:16' ? 1920 : 1024;
+        // SVG 플레이스홀더 이미지 생성 (9:16 세로형 고정)
+        const width = 1024;  // 9:16 세로형 고정
+        const height = 1792; // 9:16 세로형 고정
 
         // prompt가 undefined이거나 null인 경우 처리
         const safePrompt = prompt || '이미지 생성 중';
@@ -293,34 +271,11 @@ export class ImageGenerationService {
     }
 
     /**
-     * 이미지 생성 비용을 계산합니다 (DALL-E 3 기준).
+     * 이미지 생성 비용을 계산합니다 (DALL-E 3 기준, 9:16 세로형 표준 품질 고정).
      */
     public calculateImageCost(size: string, quality: string = 'standard'): number {
-        // DALL-E 3 가격 (2024년 기준) - USD
-        const dallEPricing = {
-            '1024x1024': {
-                'standard': 0.040,
-                'hd': 0.080
-            },
-            '1792x1024': {
-                'standard': 0.080,
-                'hd': 0.120
-            },
-            '1024x1792': {
-                'standard': 0.080,
-                'hd': 0.120
-            }
-        };
-
-        const sizeKey = size as keyof typeof dallEPricing;
-        const qualityKey = quality as 'standard' | 'hd';
-        
-        if (dallEPricing[sizeKey] && dallEPricing[sizeKey][qualityKey]) {
-            return dallEPricing[sizeKey][qualityKey];
-        }
-
-        // 기본값 (1024x1024 standard)
-        return 0.040;
+        // DALL-E 3 가격 (2024년 기준) - 1024x1792 표준 품질 고정
+        return 0.080; // 9:16 세로형 표준 품질 고정 가격
     }
 
     /**
@@ -332,17 +287,18 @@ export class ImageGenerationService {
     }
 
     /**
-     * 사용 가능한 DALL-E 모델 목록을 반환합니다.
+     * 사용 가능한 DALL-E 모델 목록을 반환합니다 (9:16 세로형 표준 품질 고정).
      */
     public getAvailableModels(): Record<string, any> {
         return {
             'dall-e-3': {
                 name: 'DALL-E 3',
-                description: 'OpenAI의 최신 이미지 생성 모델',
+                description: 'OpenAI의 최신 이미지 생성 모델 (9:16 세로형 표준 품질 고정)',
                 maxSize: 1792,
-                cost: 0.040,
-                supportedSizes: ['1024x1024', '1792x1024', '1024x1792'],
-                supportedQualities: ['standard', 'hd']
+                cost: 0.080,
+                fixedSize: '1024x1792',
+                fixedQuality: 'standard',
+                aspectRatio: '9:16'
             }
         };
     }
