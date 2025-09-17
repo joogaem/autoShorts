@@ -49,11 +49,11 @@ export class ImageGenerationService {
                 model: 'dall-e-3'
             });
 
-            // DALL-E 3 이미지 생성 요청 (9:16 세로형 고정)
+            // DALL-E 3 이미지 생성 요청 (1:1 정사각형 고정)
             const response = await this.openai.images.generate({
                 model: 'dall-e-3',
                 prompt: imagePrompt,
-                size: '1024x1792', // 9:16 세로형 고정
+                size: '1024x1024', // 1:1 정사각형 고정
                 quality: 'standard', // 표준 품질 고정
                 n: 1,
             });
@@ -82,7 +82,7 @@ export class ImageGenerationService {
                 metadata: {
                     provider: 'dall-e',
                     model: 'dall-e-3',
-                    size: '1024x1792', // 9:16 세로형 고정
+                    size: '1024x1024', // 1:1 정사각형 고정
                     createdAt: new Date()
                 }
             };
@@ -221,12 +221,12 @@ export class ImageGenerationService {
     }
 
     /**
-     * 플레이스홀더 이미지를 생성합니다 (9:16 세로형 고정).
+     * 플레이스홀더 이미지를 생성합니다 (1:1 정사각형 고정).
      */
     private generatePlaceholderImage(aspectRatio: string, prompt: string): string {
-        // SVG 플레이스홀더 이미지 생성 (9:16 세로형 고정)
-        const width = 1024;  // 9:16 세로형 고정
-        const height = 1792; // 9:16 세로형 고정
+        // SVG 플레이스홀더 이미지 생성 (1:1 정사각형 고정)
+        const width = 1024;  // 1:1 정사각형 고정
+        const height = 1024; // 1:1 정사각형 고정
 
         // prompt가 undefined이거나 null인 경우 처리
         const safePrompt = prompt || '이미지 생성 중';
@@ -271,11 +271,11 @@ export class ImageGenerationService {
     }
 
     /**
-     * 이미지 생성 비용을 계산합니다 (DALL-E 3 기준, 9:16 세로형 표준 품질 고정).
+     * 이미지 생성 비용을 계산합니다 (DALL-E 3 기준, 1:1 정사각형 표준 품질 고정).
      */
     public calculateImageCost(size: string, quality: string = 'standard'): number {
-        // DALL-E 3 가격 (2024년 기준) - 1024x1792 표준 품질 고정
-        return 0.080; // 9:16 세로형 표준 품질 고정 가격
+        // DALL-E 3 가격 (2024년 기준) - 1024x1024 표준 품질 고정
+        return 0.040; // 1:1 정사각형 표준 품질 고정 가격
     }
 
     /**
@@ -287,18 +287,18 @@ export class ImageGenerationService {
     }
 
     /**
-     * 사용 가능한 DALL-E 모델 목록을 반환합니다 (9:16 세로형 표준 품질 고정).
+     * 사용 가능한 DALL-E 모델 목록을 반환합니다 (1:1 정사각형 표준 품질 고정).
      */
     public getAvailableModels(): Record<string, any> {
         return {
             'dall-e-3': {
                 name: 'DALL-E 3',
-                description: 'OpenAI의 최신 이미지 생성 모델 (9:16 세로형 표준 품질 고정)',
-                maxSize: 1792,
-                cost: 0.080,
-                fixedSize: '1024x1792',
+                description: 'OpenAI의 최신 이미지 생성 모델 (1:1 정사각형 표준 품질 고정)',
+                maxSize: 1024,
+                cost: 0.040,
+                fixedSize: '1024x1024',
                 fixedQuality: 'standard',
-                aspectRatio: '9:16'
+                aspectRatio: '1:1'
             }
         };
     }
