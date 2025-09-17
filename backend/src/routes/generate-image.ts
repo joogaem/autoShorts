@@ -589,6 +589,93 @@ router.get('/debug-gemini', (req, res) => {
 });
 
 /**
+ * POST /api/generate-storyboard-images
+ * 스토리보드 기반 이미지 생성
+ */
+router.post('/generate-storyboard-images', async (req, res) => {
+    try {
+        console.log('=== 스토리보드 이미지 생성 요청 시작 ===');
+        console.log('요청 본문:', req.body);
+
+        const { storyboard } = req.body;
+
+        if (!storyboard || !storyboard.scenes || !Array.isArray(storyboard.scenes)) {
+            return res.status(400).json({
+                success: false,
+                error: '스토리보드 데이터가 필요합니다'
+            });
+        }
+
+        console.log('스토리보드 장면 수:', storyboard.scenes.length);
+
+        const generatedImages = [];
+        const errors = [];
+
+        // 각 장면에 대해 이미지 생성
+        for (let i = 0; i < storyboard.scenes.length; i++) {
+            const scene = storyboard.scenes[i];
+            console.log(`장면 ${i + 1} 이미지 생성 시작:`, {
+                sceneNumber: scene.scene_number,
+                prompt: scene.image_prompt_english?.substring(0, 100) + '...'
+            });
+
+            try {
+                const imageRequest: ImageGenerationRequest = {
+                    prompt: scene.image_prompt_english || `Educational scene ${scene.scene_number}`,
+                    style: 'professional',
+                    aspectRatio: '9:16',
+                    quality: 'standard'
+                };
+
+                const generatedImage = await imageGenerationService.generateImage(imageRequest);
+
+                generatedImages.push({
+                    sceneNumber: scene.scene_number,
+                    image: generatedImage,
+                    narrative: scene.narrative_korean,
+                    prompt: scene.image_prompt_english
+                });
+
+                console.log(`장면 ${i + 1} 이미지 생성 완료:`, generatedImage.id);
+            } catch (error) {
+                console.error(`장면 ${i + 1} 이미지 생성 실패:`, error);
+                errors.push({
+                    sceneNumber: scene.scene_number,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+
+        console.log('=== 스토리보드 이미지 생성 완료 ===');
+        console.log('성공:', generatedImages.length, '실패:', errors.length);
+
+        res.json({
+            success: true,
+            data: {
+                images: generatedImages,
+                errors: errors,
+                totalScenes: storyboard.scenes.length,
+                successCount: generatedImages.length,
+                errorCount: errors.length,
+                storyboard: {
+                    characters: storyboard.characters,
+                    artStyle: storyboard.artStyle,
+                    estimatedDuration: storyboard.estimatedDuration
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('스토리보드 이미지 생성 중 오류:', error);
+        res.status(500).json({
+            success: false,
+            error: '스토리보드 이미지 생성 중 오류가 발생했습니다',
+            details: error instanceof Error ? error.message : String(error)
+        });
+    }
+});
+
+/**
  * GET /api/check-api-keys
  * API 키 상태 확인
  */

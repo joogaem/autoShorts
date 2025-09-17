@@ -37,7 +37,7 @@ const ResultPage: React.FC = () => {
     if (error && !imageData) {
         return (
             <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-                <ProgressBar currentStep={5} />
+                <ProgressBar currentStep={6} />
                 <div style={{
                     maxWidth: '1200px',
                     margin: '0 auto',
@@ -74,7 +74,7 @@ const ResultPage: React.FC = () => {
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-            <ProgressBar currentStep={5} />
+            <ProgressBar currentStep={6} />
 
             <div style={{
                 maxWidth: '1200px',

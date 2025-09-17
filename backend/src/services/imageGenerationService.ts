@@ -1,13 +1,15 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { ImageGenerationRequest } from './visualAnalysisService';
-import { GOOGLE_API_KEY } from '../config/env';
+import { OPENAI_API_KEY } from '../config/env';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface GeneratedImage {
     id: string;
     url: string;
     prompt: string;
     metadata: {
-        provider: 'gemini';
+        provider: 'dall-e';
         model: string;
         size: string;
         createdAt: Date;
@@ -15,22 +17,22 @@ export interface GeneratedImage {
 }
 
 export class ImageGenerationService {
-    private readonly GOOGLE_API_KEY: string;
-    private readonly genAI: GoogleGenerativeAI;
+    private readonly openai: OpenAI;
 
     constructor() {
-        if (!GOOGLE_API_KEY) {
-            throw new Error('GOOGLE_API_KEY가 설정되지 않았습니다. 환경 변수를 확인해주세요.');
+        if (!OPENAI_API_KEY) {
+            throw new Error('OPENAI_API_KEY가 설정되지 않았습니다. 환경 변수를 확인해주세요.');
         }
-        this.GOOGLE_API_KEY = GOOGLE_API_KEY;
-        this.genAI = new GoogleGenerativeAI(this.GOOGLE_API_KEY);
+        this.openai = new OpenAI({
+            apiKey: OPENAI_API_KEY,
+        });
     }
 
     /**
-     * Gemini 2.5 Flash를 사용하여 이미지를 생성합니다.
+     * DALL-E 3를 사용하여 이미지를 생성합니다.
      */
-    public async generateImageWithGemini(request: ImageGenerationRequest): Promise<GeneratedImage> {
-        console.log('=== Gemini 2.5 Flash 이미지 생성 시작 ===');
+    public async generateImageWithDallE(request: ImageGenerationRequest): Promise<GeneratedImage> {
+        console.log('=== DALL-E 3 이미지 생성 시작 ===');
         console.log('📝 요청 데이터:', {
             prompt: request.prompt,
             style: request.style,
@@ -39,47 +41,53 @@ export class ImageGenerationService {
         });
 
         try {
-            const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
             // 이미지 생성을 위한 프롬프트 구성
             const imagePrompt = this.buildImagePrompt(request);
 
-            console.log('🎨 Gemini 이미지 생성 요청:', {
+            console.log('🎨 DALL-E 이미지 생성 요청:', {
                 prompt: imagePrompt,
-                model: 'gemini-2.0-flash-exp'
+                model: 'dall-e-3'
             });
 
-            const result = await model.generateContent(imagePrompt);
-            const response = await result.response;
+            // DALL-E 3 이미지 생성 요청
+            const response = await this.openai.images.generate({
+                model: 'dall-e-3',
+                prompt: imagePrompt,
+                size: this.getDallESize(request.aspectRatio),
+                quality: request.quality || 'standard',
+                n: 1,
+            });
 
-            if (!response) {
-                throw new Error('Gemini API에서 응답을 받지 못했습니다.');
+            if (!response.data || response.data.length === 0) {
+                throw new Error('DALL-E API에서 응답을 받지 못했습니다.');
             }
 
-            // Gemini는 텍스트 응답을 반환하므로, 이미지 생성이 아닌 텍스트 기반 설명을 반환
-            // 실제 이미지 생성은 Gemini의 이미지 생성 기능이 아직 제한적이므로
-            // 텍스트 기반 설명을 반환하고, 프론트엔드에서 적절히 처리하도록 함
+            const imageData = response.data[0];
             const imageId = this.generateImageId();
-            const description = response.text() || '이미지 생성 설명을 가져올 수 없습니다.';
 
-            console.log('✅ Gemini 이미지 생성 완료:', {
+            console.log('✅ DALL-E 응답 받음:', {
                 imageId: imageId,
-                descriptionLength: description.length
+                url: imageData.url,
+                revisedPrompt: imageData.revised_prompt
             });
+
+            // 이미지 URL을 Base64로 변환하여 저장
+            const base64Data = await this.downloadImageAsBase64(imageData.url!);
+            const fileUrl = this.saveImageToFile(base64Data, imageId);
 
             return {
                 id: imageId,
-                url: `data:text/plain;base64,${Buffer.from(description).toString('base64')}`, // 임시로 텍스트를 base64로 인코딩
+                url: fileUrl,
                 prompt: request.prompt,
                 metadata: {
-                    provider: 'gemini',
-                    model: 'gemini-2.0-flash-exp',
-                    size: this.getGeminiSize(request.aspectRatio),
+                    provider: 'dall-e',
+                    model: 'dall-e-3',
+                    size: this.getDallESize(request.aspectRatio),
                     createdAt: new Date()
                 }
             };
         } catch (error: any) {
-            console.error('❌ Gemini 이미지 생성 실패!');
+            console.error('❌ DALL-E 이미지 생성 실패!');
             console.error('에러 타입:', error.constructor.name);
             console.error('에러 메시지:', error.message);
 
@@ -87,7 +95,7 @@ export class ImageGenerationService {
                 console.error('📚 에러 스택 트레이스:', error.stack);
             }
 
-            throw new Error(`Gemini image generation failed: ${error.message}`);
+            throw new Error(`DALL-E image generation failed: ${error.message}`);
         }
     }
 
@@ -111,42 +119,40 @@ export class ImageGenerationService {
     }
 
     /**
-     * 이미지를 생성합니다 (Gemini 2.5 Flash 사용).
+     * 이미지를 생성합니다 (DALL-E 3 사용).
      */
     public async generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
-        console.log('=== Gemini 2.5 Flash 이미지 생성 시작 ===');
+        console.log('=== DALL-E 3 이미지 생성 시작 ===');
         console.log('요청 데이터:', request);
 
         try {
-            console.log('🚀 Gemini 2.5 Flash로 이미지 생성 시도...');
-            const result = await this.generateImageWithGemini(request);
-            console.log('✅ Gemini 이미지 생성 성공!');
+            console.log('🚀 DALL-E 3로 이미지 생성 시도...');
+            const result = await this.generateImageWithDallE(request);
+            console.log('✅ DALL-E 이미지 생성 성공!');
             return result;
         } catch (error) {
-            console.error('❌ Gemini 이미지 생성 실패');
+            console.error('❌ DALL-E 이미지 생성 실패');
             console.error('에러:', error instanceof Error ? error.message : String(error));
-            throw new Error(`Gemini image generation failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`DALL-E image generation failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
     /**
-     * Gemini 이미지 크기를 결정합니다.
+     * DALL-E 이미지 크기를 결정합니다.
      */
-    private getGeminiSize(aspectRatio?: string): string {
+    private getDallESize(aspectRatio?: string): '1024x1024' | '1792x1024' | '1024x1792' {
         if (!aspectRatio) {
             return '1024x1024'; // 기본 정사각형
         }
 
-        // 비율에 따른 크기 결정
+        // DALL-E 3에서 지원하는 크기들
         switch (aspectRatio) {
             case '16:9':
-                return '1920x1080'; // 16:9 비율
+                return '1792x1024'; // 16:9 비율 (가로형)
             case '9:16':
-                return '1080x1920'; // 9:16 비율
+                return '1024x1792'; // 9:16 비율 (세로형)
             case '4:3':
-                return '1024x768'; // 4:3 비율
             case '3:4':
-                return '768x1024'; // 3:4 비율
             case '1:1':
             default:
                 return '1024x1024'; // 정사각형
@@ -180,6 +186,95 @@ export class ImageGenerationService {
     }
 
     /**
+     * URL에서 이미지를 다운로드하여 Base64로 변환합니다.
+     */
+    private async downloadImageAsBase64(imageUrl: string): Promise<string> {
+        try {
+            const response = await fetch(imageUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to download image: ${response.statusText}`);
+            }
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const mimeType = response.headers.get('content-type') || 'image/png';
+            
+            return `data:${mimeType};base64,${buffer.toString('base64')}`;
+        } catch (error) {
+            console.error('❌ 이미지 다운로드 실패:', error);
+            throw new Error(`Failed to download image: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Base64 이미지 데이터를 파일로 저장하고 URL을 반환합니다.
+     */
+    private saveImageToFile(base64Data: string, imageId: string): string {
+        try {
+            // temp-images 디렉토리가 없으면 생성
+            const tempDir = path.join(process.cwd(), 'temp-images');
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            // Base64 데이터에서 실제 데이터 부분만 추출
+            const base64Content = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
+            const fileName = `${imageId}.png`;
+            const filePath = path.join(tempDir, fileName);
+
+            // Base64 데이터를 파일로 저장
+            const imageBuffer = Buffer.from(base64Content, 'base64');
+            fs.writeFileSync(filePath, imageBuffer);
+
+            console.log('✅ 이미지 파일 저장 완료:', {
+                fileName: fileName,
+                filePath: filePath,
+                fileSize: imageBuffer.length,
+                relativePath: `/temp-images/${fileName}`
+            });
+
+            // Base64 데이터를 직접 반환 (참고 코드처럼)
+            return base64Data;
+        } catch (error) {
+            console.error('❌ 이미지 파일 저장 실패:', error);
+            // 실패 시 원본 Base64 데이터 반환
+            return base64Data;
+        }
+    }
+
+    /**
+     * 플레이스홀더 이미지를 생성합니다.
+     */
+    private generatePlaceholderImage(aspectRatio: string, prompt: string): string {
+        // SVG 플레이스홀더 이미지 생성
+        const width = aspectRatio === '9:16' ? 1080 : 1024;
+        const height = aspectRatio === '9:16' ? 1920 : 1024;
+
+        // prompt가 undefined이거나 null인 경우 처리
+        const safePrompt = prompt || '이미지 생성 중';
+        const displayText = safePrompt.length > 50 ? safePrompt.substring(0, 50) + '...' : safePrompt;
+
+        const svg = `
+            <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grad1)"/>
+                <rect x="20" y="20" width="${width - 40}" height="${height - 40}" fill="none" stroke="white" stroke-width="4" rx="20"/>
+                <circle cx="${width / 2}" cy="${height / 2 - 60}" r="60" fill="white" opacity="0.8"/>
+                <text x="${width / 2}" y="${height / 2 + 20}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="24" font-weight="bold">🎨</text>
+                <text x="${width / 2}" y="${height / 2 + 80}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="18" font-weight="500">이미지 생성 중</text>
+                <text x="${width / 2}" y="${height / 2 + 120}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="14" opacity="0.8">${displayText}</text>
+            </svg>
+        `;
+
+        return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    }
+
+    /**
      * 이미지를 비디오용으로 최적화합니다.
      */
     public async optimizeImageForVideo(imageUrl: string): Promise<string> {
@@ -198,22 +293,34 @@ export class ImageGenerationService {
     }
 
     /**
-     * 이미지 생성 비용을 계산합니다 (Gemini 기준).
+     * 이미지 생성 비용을 계산합니다 (DALL-E 3 기준).
      */
     public calculateImageCost(size: string, quality: string = 'standard'): number {
-        // Gemini 2.5 Flash 가격 (2024년 기준) - 무료 또는 매우 저렴
-        const geminiPricing = {
-            '512x512': 0.0,
-            '768x768': 0.0,
-            '1024x1024': 0.0,
-            '1920x1080': 0.0,  // 16:9
-            '1080x1920': 0.0,  // 9:16
-            '1024x768': 0.0,   // 4:3
-            '768x1024': 0.0    // 3:4
+        // DALL-E 3 가격 (2024년 기준) - USD
+        const dallEPricing = {
+            '1024x1024': {
+                'standard': 0.040,
+                'hd': 0.080
+            },
+            '1792x1024': {
+                'standard': 0.080,
+                'hd': 0.120
+            },
+            '1024x1792': {
+                'standard': 0.080,
+                'hd': 0.120
+            }
         };
 
-        // Gemini는 현재 무료이므로 0 반환
-        return 0.0;
+        const sizeKey = size as keyof typeof dallEPricing;
+        const qualityKey = quality as 'standard' | 'hd';
+        
+        if (dallEPricing[sizeKey] && dallEPricing[sizeKey][qualityKey]) {
+            return dallEPricing[sizeKey][qualityKey];
+        }
+
+        // 기본값 (1024x1024 standard)
+        return 0.040;
     }
 
     /**
@@ -225,15 +332,17 @@ export class ImageGenerationService {
     }
 
     /**
-     * 사용 가능한 Gemini 모델 목록을 반환합니다.
+     * 사용 가능한 DALL-E 모델 목록을 반환합니다.
      */
     public getAvailableModels(): Record<string, any> {
         return {
-            'gemini-2.0-flash-exp': {
-                name: 'Gemini 2.0 Flash Experimental',
-                description: 'Google의 최신 Gemini 모델로 이미지 생성 및 텍스트 처리',
-                maxSize: 2048,
-                cost: 0.0
+            'dall-e-3': {
+                name: 'DALL-E 3',
+                description: 'OpenAI의 최신 이미지 생성 모델',
+                maxSize: 1792,
+                cost: 0.040,
+                supportedSizes: ['1024x1024', '1792x1024', '1024x1792'],
+                supportedQualities: ['standard', 'hd']
             }
         };
     }

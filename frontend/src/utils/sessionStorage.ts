@@ -11,10 +11,16 @@ export interface UploadData {
 export interface GroupData {
     selectedGroups: string[];
     slideGroups: any[];
+    keyPoints?: any[];
+    selectedSectionIndex?: number;
+    selectedSection?: any;
 }
 
 export interface ScriptData {
-    scriptResult: any;
+    scriptResult?: any;
+    storyboardResult?: any;
+    storyboardImages?: any;
+    generationMode?: 'script' | 'storyboard' | 'storyboard-images';
     slideGroups?: any[];
 }
 

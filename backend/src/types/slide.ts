@@ -24,4 +24,17 @@ export interface Slide {
         imageCount: number;
         slideType: 'text-heavy' | 'image-heavy' | 'balanced' | 'minimal';
     };
+}
+
+export interface StoryboardScene {
+    sceneNumber: number;
+    narrative: string;
+    imagePrompt: string;
+}
+
+export interface StoryboardResponse {
+    scenes: StoryboardScene[];
+    characters: string[];
+    artStyle: string;
+    estimatedDuration: number;
 } 

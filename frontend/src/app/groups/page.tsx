@@ -29,6 +29,8 @@ const GroupsPage: React.FC = () => {
     const [editingContent, setEditingContent] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [selectedSectionIndex, setSelectedSectionIndex] = useState<number | null>(null);
+    const [showErrorModal, setShowErrorModal] = useState(false);
 
     useEffect(() => {
         // 세션에서 업로드 데이터 가져오기
@@ -97,11 +99,30 @@ const GroupsPage: React.FC = () => {
         setEditingContent('');
     };
 
+    const handleSectionSelect = (index: number) => {
+        if (selectedSectionIndex === index) {
+            // 이미 선택된 섹션을 클릭하면 선택 취소
+            setSelectedSectionIndex(null);
+        } else {
+            // 다른 섹션 선택
+            setSelectedSectionIndex(index);
+        }
+    };
+
     const handleContinue = () => {
-        // 세션에 중요 내용 데이터 저장
+        if (selectedSectionIndex === null) {
+            setShowErrorModal(true);
+            return;
+        }
+
+        // 세션에 중요 내용 데이터 저장 (선택된 섹션 정보 포함)
         setGroupData({
-            keyPoints
-        });
+            selectedGroups: [],
+            slideGroups: [],
+            keyPoints,
+            selectedSectionIndex,
+            selectedSection: keyPoints[selectedSectionIndex]
+        } as any);
 
         // 스크립트 생성 페이지로 이동
         router.push('/script');
@@ -223,24 +244,17 @@ const GroupsPage: React.FC = () => {
                         }}>
                             다듬어진 섹션 ({keyPoints.length}개)
                         </h2>
+                        <div style={{
+                            fontSize: '14px',
+                            color: '#6b7280',
+                            marginTop: '8px'
+                        }}>
+                            {selectedSectionIndex !== null
+                                ? `선택된 섹션: ${keyPoints[selectedSectionIndex]?.title || `섹션 ${selectedSectionIndex + 1}`}`
+                                : '영상을 만들 섹션을 선택해주세요'
+                            }
+                        </div>
                     </div>
-
-                    {/* 다듬어진 섹션 개요 표시 */}
-                    <RefinedSectionDisplay
-                        sections={keyPoints.map((kp, index) => ({
-                            id: index + 1,
-                            title: kp.title || `섹션 ${index + 1}`,
-                            keyPoints: kp.keyPoints || [],
-                            summary: kp.summary || '',
-                            refinedText: kp.content || '',
-                            originalText: kp.originalText || kp.content || '',
-                            sectionType: index === 0 ? 'introduction' :
-                                index === 1 ? 'main-point-1' :
-                                    index === 2 ? 'main-point-2' :
-                                        index === 3 ? 'main-point-3' : 'conclusion'
-                        }))}
-                        showDetails={false}
-                    />
 
                     <div style={{
                         display: 'flex',
@@ -252,10 +266,11 @@ const GroupsPage: React.FC = () => {
                             <div
                                 key={keyPoint.id}
                                 style={{
-                                    border: '1px solid #e5e7eb',
+                                    border: selectedSectionIndex === index ? '2px solid #3b82f6' : '1px solid #e5e7eb',
                                     borderRadius: '12px',
                                     padding: '24px',
-                                    backgroundColor: '#fafafa'
+                                    backgroundColor: selectedSectionIndex === index ? '#eff6ff' : '#fafafa',
+                                    transition: 'all 0.2s ease'
                                 }}
                             >
                                 <div style={{
@@ -264,21 +279,51 @@ const GroupsPage: React.FC = () => {
                                     alignItems: 'flex-start',
                                     marginBottom: '16px'
                                 }}>
-                                    <div style={{
-                                        fontSize: '16px',
-                                        fontWeight: '600',
-                                        color: '#3b82f6',
-                                        backgroundColor: '#eff6ff',
-                                        padding: '4px 12px',
-                                        borderRadius: '20px'
-                                    }}>
-                                        {keyPoint.title || `섹션 ${index + 1}`}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{
+                                            fontSize: '16px',
+                                            fontWeight: '600',
+                                            color: '#3b82f6',
+                                            backgroundColor: '#eff6ff',
+                                            padding: '4px 12px',
+                                            borderRadius: '20px'
+                                        }}>
+                                            {keyPoint.title || `섹션 ${index + 1}`}
+                                        </div>
                                     </div>
-                                    <div style={{
-                                        fontSize: '14px',
-                                        color: '#6b7280'
-                                    }}>
-                                        예상 {keyPoint.estimatedDuration}초
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{
+                                            fontSize: '14px',
+                                            color: '#6b7280'
+                                        }}>
+                                            예상 {keyPoint.estimatedDuration}초
+                                        </div>
+                                        <button
+                                            onClick={() => handleSectionSelect(index)}
+                                            style={{
+                                                width: '24px',
+                                                height: '24px',
+                                                borderRadius: '50%',
+                                                border: selectedSectionIndex === index ? '2px solid #3b82f6' : '2px solid #d1d5db',
+                                                backgroundColor: selectedSectionIndex === index ? '#3b82f6' : 'white',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                transition: 'all 0.2s ease',
+                                                position: 'relative'
+                                            }}
+                                        >
+                                            {selectedSectionIndex === index && (
+                                                <div style={{
+                                                    color: 'white',
+                                                    fontSize: '14px',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    ✓
+                                                </div>
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
 
@@ -446,13 +491,14 @@ const GroupsPage: React.FC = () => {
 
                     <button
                         onClick={handleContinue}
+                        disabled={selectedSectionIndex === null}
                         style={{
                             padding: '12px 24px',
-                            backgroundColor: '#3b82f6',
+                            backgroundColor: selectedSectionIndex === null ? '#d1d5db' : '#3b82f6',
                             color: 'white',
                             border: 'none',
                             borderRadius: '8px',
-                            cursor: 'pointer',
+                            cursor: selectedSectionIndex === null ? 'not-allowed' : 'pointer',
                             fontSize: '16px'
                         }}
                     >
@@ -460,6 +506,70 @@ const GroupsPage: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {/* 에러 모달 */}
+            {showErrorModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        borderRadius: '12px',
+                        padding: '32px',
+                        maxWidth: '400px',
+                        width: '90%',
+                        textAlign: 'center',
+                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                    }}>
+                        <div style={{
+                            fontSize: '48px',
+                            marginBottom: '16px'
+                        }}>
+                            ⚠️
+                        </div>
+                        <h3 style={{
+                            fontSize: '20px',
+                            fontWeight: '600',
+                            color: '#111827',
+                            marginBottom: '12px'
+                        }}>
+                            섹션을 선택해주세요
+                        </h3>
+                        <p style={{
+                            fontSize: '16px',
+                            color: '#6b7280',
+                            marginBottom: '24px',
+                            lineHeight: '1.5'
+                        }}>
+                            영상을 만들기 위해 5개 섹션 중 하나를 선택해주세요.
+                        </p>
+                        <button
+                            onClick={() => setShowErrorModal(false)}
+                            style={{
+                                padding: '12px 24px',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: '500'
+                            }}
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

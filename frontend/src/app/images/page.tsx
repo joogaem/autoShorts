@@ -20,6 +20,9 @@ const ImagesPage: React.FC = () => {
     const [failedImages, setFailedImages] = useState<string[]>([]);
 
     useEffect(() => {
+        // API_URL 디버깅
+        console.log('🔧 Frontend API_URL:', API_URL);
+
         // 세션에서 TTS 데이터 가져오기
         const data = getTTSData();
         if (!data) {
@@ -274,7 +277,7 @@ const ImagesPage: React.FC = () => {
     if (error && !ttsData) {
         return (
             <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-                <ProgressBar currentStep={4} />
+                <ProgressBar currentStep={5} />
                 <div style={{
                     maxWidth: '1200px',
                     margin: '0 auto',
@@ -311,7 +314,7 @@ const ImagesPage: React.FC = () => {
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-            <ProgressBar currentStep={4} />
+            <ProgressBar currentStep={5} />
 
             <div style={{
                 maxWidth: '1200px',
@@ -694,7 +697,19 @@ const ImagesPage: React.FC = () => {
                                             backgroundColor: 'white'
                                         }}>
                                             <img
-                                                src={image.url.startsWith('http') ? image.url : `${API_URL}${image.url}`}
+                                                src={(() => {
+                                                    const constructedUrl = image.url.startsWith('data:image') ? image.url :
+                                                        image.url.startsWith('http') ? image.url :
+                                                            `${API_URL}${image.url}`;
+                                                    console.log('🔍 Image URL Debug:', {
+                                                        originalUrl: image.url,
+                                                        apiUrl: API_URL,
+                                                        constructedUrl: constructedUrl,
+                                                        isDataUrl: image.url.startsWith('data:image'),
+                                                        isHttpUrl: image.url.startsWith('http')
+                                                    });
+                                                    return constructedUrl;
+                                                })()}
                                                 alt={`Generated image ${idx + 1}`}
                                                 style={{
                                                     width: '100%',
@@ -703,10 +718,62 @@ const ImagesPage: React.FC = () => {
                                                 }}
                                                 onError={(e) => {
                                                     console.error('이미지 로드 실패:', image.url);
-                                                    e.currentTarget.style.display = 'none';
+                                                    console.error('이미지 URL 타입:', {
+                                                        isDataUrl: image.url.startsWith('data:image'),
+                                                        isHttpUrl: image.url.startsWith('http'),
+                                                        urlLength: image.url.length,
+                                                        urlPrefix: image.url.substring(0, 100)
+                                                    });
+
+                                                    // base64 데이터가 잘린 경우 처리
+                                                    if (image.url.startsWith('data:image') && image.url.length < 200) {
+                                                        console.error('Base64 데이터가 잘렸습니다. 이미지를 다시 생성해주세요.');
+                                                        e.currentTarget.style.display = 'none';
+                                                        // 에러 메시지와 재시도 버튼 표시
+                                                        const errorDiv = document.createElement('div');
+                                                        errorDiv.innerHTML = `
+                                                            <div style="padding: 8px; color: #dc2626; font-size: 12px; text-align: center;">
+                                                                <div style="margin-bottom: 8px;">이미지 데이터 오류</div>
+                                                                <button onclick="window.location.reload()" style="
+                                                                    background: #dc2626; 
+                                                                    color: white; 
+                                                                    border: none; 
+                                                                    padding: 4px 8px; 
+                                                                    border-radius: 4px; 
+                                                                    cursor: pointer; 
+                                                                    font-size: 11px;
+                                                                ">새로고침</button>
+                                                            </div>
+                                                        `;
+                                                        e.currentTarget.parentNode?.appendChild(errorDiv);
+                                                    } else {
+                                                        e.currentTarget.style.display = 'none';
+                                                        // 일반적인 이미지 로드 실패 메시지
+                                                        const errorDiv = document.createElement('div');
+                                                        errorDiv.innerHTML = `
+                                                            <div style="padding: 8px; color: #dc2626; font-size: 12px; text-align: center;">
+                                                                <div style="margin-bottom: 8px;">이미지 로드 실패</div>
+                                                                <button onclick="window.location.reload()" style="
+                                                                    background: #dc2626; 
+                                                                    color: white; 
+                                                                    border: none; 
+                                                                    padding: 4px 8px; 
+                                                                    border-radius: 4px; 
+                                                                    cursor: pointer; 
+                                                                    font-size: 11px;
+                                                                ">새로고침</button>
+                                                            </div>
+                                                        `;
+                                                        e.currentTarget.parentNode?.appendChild(errorDiv);
+                                                    }
                                                 }}
                                                 onLoad={() => {
                                                     console.log('이미지 로드 성공:', image.url);
+                                                    console.log('이미지 URL 타입:', {
+                                                        isDataUrl: image.url.startsWith('data:image'),
+                                                        isHttpUrl: image.url.startsWith('http'),
+                                                        urlLength: image.url.length
+                                                    });
                                                 }}
                                             />
                                             <div style={{

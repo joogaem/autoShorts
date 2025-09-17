@@ -20,7 +20,7 @@ export interface GeneratedImage {
     url: string;
     prompt: string;
     metadata: {
-        provider: 'gemini';
+        provider: 'dall-e';
         model: string;
         size: string;
         createdAt: Date;

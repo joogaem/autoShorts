@@ -106,14 +106,13 @@ const TTSPage: React.FC = () => {
     };
 
     const handleBack = () => {
-        clearScriptData();
-        router.push('/script');
+        router.push('/storyboard-images');
     };
 
     if (error && !scriptData) {
         return (
             <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-                <ProgressBar currentStep={3} />
+                <ProgressBar currentStep={4} />
                 <div style={{
                     maxWidth: '1200px',
                     margin: '0 auto',
@@ -150,7 +149,7 @@ const TTSPage: React.FC = () => {
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-            <ProgressBar currentStep={3} />
+            <ProgressBar currentStep={4} />
 
             <div style={{
                 maxWidth: '1200px',

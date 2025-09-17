@@ -8,6 +8,9 @@ import { OPENAI_API_KEY, PORT } from './config/env';
 import uploadRouter from './routes/upload';
 import parseRouter from './routes/parse';
 import generateScriptRouter from './routes/generate-script';
+import generateStoryboardRouter from './routes/generate-storyboard';
+import generateStoryboardImagesRouter from './routes/generate-storyboard-images';
+import translateRouter from './routes/translate';
 import ttsRouter from './routes/tts';
 import generateImageRouter from './routes/generate-image';
 
@@ -41,6 +44,9 @@ app.get('/', (req, res) => {
 app.use('/api/upload', uploadRouter);
 app.use('/api/parse', parseRouter);
 app.use('/api/generate-script', generateScriptRouter);
+app.use('/api/generate-storyboard', generateStoryboardRouter);
+app.use('/api/generate-storyboard-images', generateStoryboardImagesRouter);
+app.use('/api/translate', translateRouter);
 app.use('/api/tts', ttsRouter);
 app.use('/api', generateImageRouter);
 
