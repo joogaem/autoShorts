@@ -32,13 +32,13 @@ const UploadPage: React.FC = () => {
             color: '#6b7280',
             marginBottom: '8px'
           }}>
-            PPTX/PDF 파일을 업로드하여 쇼츠 영상용 콘텐츠를 자동으로 생성하세요
+            텍스트를 입력하거나 PPTX/PDF 파일을 업로드하여 쇼츠 영상용 콘텐츠를 자동으로 생성하세요
           </p>
           <p style={{
             fontSize: '14px',
             color: '#9ca3af'
           }}>
-            지원 형식: PPTX, PDF (최대 100MB)
+            텍스트 입력 또는 파일 업로드 (PPTX, PDF 최대 100MB)
           </p>
         </div>
 

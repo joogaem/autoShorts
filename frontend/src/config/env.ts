@@ -5,6 +5,7 @@ export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 export const UPLOAD_URL = process.env.NEXT_PUBLIC_UPLOAD_URL || 'http://localhost:3001/api/upload';
 export const PARSE_URL = process.env.NEXT_PUBLIC_PARSE_URL || 'http://localhost:3001/api/parse';
+export const GENERATE_FROM_TEXT_URL = process.env.NEXT_PUBLIC_GENERATE_FROM_TEXT_URL || 'http://localhost:3001/api/generate-from-text';
 export const CORE_MESSAGES_URL = process.env.NEXT_PUBLIC_CORE_MESSAGES_URL || 'http://localhost:3001/api/extract-core-messages';
 
 // 환경 변수 검증

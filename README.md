@@ -19,6 +19,31 @@
 
 ---
 
+## 🧭 **최소 사용 플로우 (실사용 기준)**
+
+1. 파일 업로드 → 파싱
+   - `POST /api/upload` (또는 `POST /api/parse`)로 PPTX/PDF 업로드 및 콘텐츠 추출
+
+2. 스크립트 생성
+   - `POST /api/generate-script` (Hook/Core/CTA 구조)
+
+3. 스토리보드 생성 (선택)
+   - `POST /api/generate-storyboard` (장면별 내레이션 확보 시 유용)
+
+4. 음성 변환 (TTS)
+   - `POST /api/tts/generate` (섹션별 MP3 생성)
+
+5. 이미지 생성
+   - `POST /api/generate-image` (기본: Gemini 이미지, 백업: DALL-E 3)
+
+6. 영상 생성
+   - `POST /api/generate-video`
+   - 스토리보드의 내레이션 텍스트를 FFmpeg `drawtext`로 번인 자막 처리(별도 SRT/VTT 파일 미사용)
+
+참고:
+- 자막은 “나레이션 번인” 방식으로 처리되며, SRT/VTT 파일은 생성하지 않습니다.
+- 비디오 프리뷰/다운로드, 엔드투엔드 오케스트레이션 등 부가 플로우는 현재 목록에서 슬림화되었습니다.
+
 ## 🔧 **환경 설정**
 
 ### **통합 환경 변수 설정**

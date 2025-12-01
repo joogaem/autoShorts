@@ -1,4 +1,5 @@
 import express from 'express';
+import * as fs from 'fs';
 import { TTSService } from '../services/ttsService';
 
 const router = express.Router();
@@ -70,21 +71,24 @@ router.post('/generate', async (req, res) => {
             });
         }
 
-        // 스크립트를 여러 개의 음성 파일로 변환
+        // 스크립트를 여러 개의 음성 파일로 변환 (SRT 포함)
         console.log('🎬 TTS 서비스 호출 시작...');
-        const audioFiles = await ttsService.generateAudioFromScript(script, filename);
+        const audioResults = await ttsService.generateAudioFromScript(script, filename, true);
         console.log('✅ TTS 서비스 호출 완료');
 
         // 각 오디오 파일의 정보 수집
         console.log('📊 오디오 파일 정보 수집 시작...');
-        const audioInfo = audioFiles.map(audioPath => {
-            const info = ttsService.getAudioInfo(audioPath);
-            console.log(`📁 파일 정보: ${audioPath} - 크기: ${info.size} bytes, 시간: ${info.duration}초`);
+        const audioInfo = audioResults.map(result => {
+            const audioStats = fs.statSync(result.audioPath);
+            console.log(`📁 파일 정보: ${result.audioPath} - 크기: ${audioStats.size} bytes, 시간: ${result.duration}초`);
             return {
-                path: audioPath,
-                filename: audioPath.split('/').pop(),
-                duration: info.duration,
-                size: info.size
+                path: result.audioPath,
+                filename: result.audioPath.split('/').pop(),
+                srtPath: result.srtPath,
+                srtFilename: result.srtPath ? result.srtPath.split('/').pop() : undefined,
+                duration: result.duration,
+                size: audioStats.size,
+                section: result.section
             };
         });
 
@@ -144,21 +148,23 @@ router.post('/simple', async (req, res) => {
         console.log('📝 텍스트:', text.substring(0, 100) + '...');
         console.log('📁 파일명:', filename);
 
-        // 단일 텍스트를 음성으로 변환
+        // 단일 텍스트를 음성으로 변환 (SSML 사용, SRT 생성)
         console.log('🎬 단일 TTS 서비스 호출 시작...');
-        const audioPath = await ttsService.textToSpeech(text, filename);
+        const result = await ttsService.textToSpeech(text, filename, true);
         console.log('✅ 단일 TTS 서비스 호출 완료');
 
-        const info = ttsService.getAudioInfo(audioPath);
-        console.log('✅ 단일 TTS API 완료:', audioPath);
+        const audioStats = fs.statSync(result.audioPath);
+        console.log('✅ 단일 TTS API 완료:', result.audioPath);
 
         res.json({
             success: true,
             audioFile: {
-                path: audioPath,
-                filename: audioPath.split('/').pop(),
-                duration: info.duration,
-                size: info.size
+                path: result.audioPath,
+                filename: result.audioPath.split('/').pop(),
+                srtPath: result.srtPath,
+                srtFilename: result.srtPath ? result.srtPath.split('/').pop() : undefined,
+                duration: result.duration,
+                size: audioStats.size
             },
             message: '음성 변환이 완료되었습니다.'
         });

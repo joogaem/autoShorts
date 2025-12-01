@@ -15,7 +15,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep, totalSteps = 7 }
         { name: '스크립트', path: '/script' },
         { name: '스토리보드', path: '/storyboard-images' },
         { name: 'TTS', path: '/tts' },
-        { name: '이미지', path: '/images' },
+        { name: '영상', path: '/video' },
         { name: '결과', path: '/result' }
     ];
 

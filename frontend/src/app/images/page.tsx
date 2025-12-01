@@ -70,13 +70,10 @@ const ImagesPage: React.FC = () => {
                         coreMessage: script.coreMessage ? script.coreMessage.substring(0, 100) + '...' : '없음'
                     });
 
-                    const slideGroups = ttsData?.slideGroups || [];
-                    const fullGroup = slideGroups.find((g: any) => g.id === group.id);
-                    console.log('fullGroup 찾기 결과:', fullGroup ? '찾음' : '없음');
-
+                    // 그룹 슬라이드는 더 이상 사용하지 않음
                     const requestBody = {
-                        groups: [fullGroup || { id: group.id, title: group.title, slides: group.slides || [] }],
-                        slides: fullGroup?.slides || group.slides || [],
+                        groups: [{ id: group.id, title: group.title }],
+                        slides: [],
                         coreMessages: [{
                             groupId: group.id,
                             coreMessage: script.coreMessage || ''
@@ -164,9 +161,6 @@ const ImagesPage: React.FC = () => {
             console.log('이미지 생성 시작...');
             const results = await Promise.all(
                 imageScripts.map(async ({ group, script, audioUrl, duration, imageScripts }) => {
-                    const slideGroups = ttsData?.slideGroups || [];
-                    const fullGroup = slideGroups.find((g: any) => g.id === group.id);
-
                     // 활성화된 스크립트만 필터링
                     const enabledScripts = imageScripts.filter((script: any) => script.enabled !== false);
 
@@ -183,8 +177,8 @@ const ImagesPage: React.FC = () => {
                     }
 
                     const requestBody = {
-                        groups: [fullGroup || { id: group.id, title: group.title, slides: group.slides || [] }],
-                        slides: fullGroup?.slides || group.slides || [],
+                        groups: [{ id: group.id, title: group.title }],
+                        slides: [],
                         imageScripts: [{
                             groupId: group.id,
                             imageScripts: enabledScripts
@@ -252,8 +246,8 @@ const ImagesPage: React.FC = () => {
             generatedImages
         });
 
-        // 결과 확인 페이지로 이동
-        router.push('/result');
+        // 영상 생성 페이지로 이동
+        router.push('/video');
     };
 
     const handleBack = () => {
@@ -428,7 +422,7 @@ const ImagesPage: React.FC = () => {
                                     color: '#6b7280',
                                     marginBottom: '12px'
                                 }}>
-                                    {duration}초 • {group.slides.length}개 슬라이드
+                                    {duration}초
                                 </div>
                                 <div style={{
                                     fontSize: '12px',

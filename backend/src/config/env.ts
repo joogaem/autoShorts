@@ -10,6 +10,9 @@ export const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 // Google API 키 (Gemini용)
 export const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 
+// NanoBana API 키
+export const NANOBANA_API_KEY = process.env.NANOBANA_API_KEY || '';
+
 // 서버 포트
 export const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -37,5 +40,6 @@ if (process.env.NODE_ENV === 'development') {
     console.log('PORT:', PORT);
     console.log('OPENAI_API_KEY:', OPENAI_API_KEY ? '설정됨' : '설정되지 않음');
     console.log('GOOGLE_API_KEY:', GOOGLE_API_KEY ? '설정됨' : '설정되지 않음');
+    console.log('NANOBANA_API_KEY:', NANOBANA_API_KEY ? '설정됨' : '설정되지 않음');
     console.log('GOOGLE_APPLICATION_CREDENTIALS:', GOOGLE_APPLICATION_CREDENTIALS ? '설정됨' : '설정되지 않음');
 }

@@ -23,7 +23,28 @@ const TTSPage: React.FC = () => {
         }
 
         setScriptDataState(data);
-        setScriptResult(data.scriptResult);
+
+        // storyboard 모드인 경우 storyboardResult를 scriptResult로 변환
+        if (data.generationMode === 'storyboard' || data.generationMode === 'storyboard-images') {
+            // storyboard의 scenes를 script 형식으로 변환
+            const storyboardScenes = data.storyboardResult?.scenes || [];
+            const convertedScripts = storyboardScenes.map((scene: any, index: number) => ({
+                group: {
+                    id: `scene-${scene.scene_number}`,
+                    title: `장면 ${scene.scene_number}`,
+                    estimatedDuration: 60 // 기본값
+                },
+                script: {
+                    hook: '',
+                    coreMessage: scene.narrative_korean,
+                    cta: ''
+                }
+            }));
+            setScriptResult(convertedScripts);
+        } else {
+            // 기존 script 모드
+            setScriptResult(data.scriptResult || []);
+        }
     }, []);
 
     const generateAudio = async () => {
@@ -101,8 +122,8 @@ const TTSPage: React.FC = () => {
             slideGroups: scriptData.slideGroups || [] // 그룹 정보도 함께 저장
         });
 
-        // 이미지 생성 페이지로 이동
-        router.push('/images');
+        // 영상 생성 페이지로 이동 (스토리보드 탭에서 이미 이미지 생성)
+        router.push('/video');
     };
 
     const handleBack = () => {

@@ -51,27 +51,32 @@ const model = new ChatOpenAI({
 
 // 스크립트 생성 프롬프트 템플릿
 const scriptPromptTemplate = PromptTemplate.fromTemplate(`
-당신은 전문적인 쇼츠 비디오 스크립트 작가입니다. 
-주어진 중요 내용을 바탕으로 60초 이내의 매력적인 쇼츠 비디오 스크립트를 작성해주세요.
+당신은 전문적인 교육용 쇼츠 비디오 스크립트 작가입니다. 
+주어진 수업 내용을 바탕으로 학습자의 이해를 돕는 흥미로운 쇼츠 비디오 스크립트를 작성해주세요.
 
 **스타일**: {style}
 **톤**: {tone}
 **목표 길이**: {targetDuration}초
 
-**중요 내용**:
+**수업 내용**:
 {keyPointsContent}
 
 **스크립트 구조**:
-1. **Hook (5-10초)**: 시청자의 관심을 끄는 강력한 오프닝
-2. **Core Message (40-50초)**: 핵심 내용을 명확하고 흥미롭게 전달
-3. **CTA (5-10초)**: 행동 유도 (구독, 좋아요, 댓글 등)
+1. **Hook (5-10초)**: 흥미로운 질문이나 놀라운 사실로 시작
+2. **Core Message (40-50초)**: 일화, 에피소드, 구체적 예시를 활용한 핵심 내용 전달
+3. **CTA (5-10초)**: 학습 동기 부여 및 행동 유도
 
-**요구사항**:
+**핵심 요구사항**:
 - 한국어로 작성
-- 자연스럽고 구어체적인 톤
-- 시청자가 끝까지 볼 수 있도록 흥미롭게
-- 핵심 메시지를 명확하게 전달
-- 적절한 감정과 리듬감 포함
+- 자연스럽고 친근한 구어체 톤
+- 학습 내용을 이해하기 쉽게 만들기 위해 다음 요소들을 반드시 포함:
+  * 구체적인 일화나 실제 사례
+  * 시청자가 공감할 수 있는 일상적 예시
+  * 놀라운 사실이나 흥미로운 통계
+  * 단계별 설명과 비유
+- 추상적인 개념은 구체적인 예시로 설명
+- 학습자가 "아하!" 하고 깨달을 수 있는 순간 포함
+- 기억하기 쉬운 핵심 포인트 강조
 - 5개의 중요 내용을 모두 포함하여 구성
 
 **출력 형식**:
@@ -82,29 +87,34 @@ const scriptPromptTemplate = PromptTemplate.fromTemplate(`
 
 // 섹션 기반 스크립트 생성 프롬프트 템플릿
 const sectionsScriptPromptTemplate = PromptTemplate.fromTemplate(`
-당신은 전문적인 쇼츠 비디오 스크립트 작가입니다. 
-주어진 5개 섹션의 내용을 바탕으로 60초 이내의 매력적인 쇼츠 비디오 스크립트를 작성해주세요.
+당신은 전문적인 교육용 쇼츠 비디오 스크립트 작가입니다. 
+주어진 수업 섹션들을 바탕으로 학습자의 이해를 돕는 흥미로운 쇼츠 비디오 스크립트를 작성해주세요.
 
 **스타일**: {style}
 **톤**: {tone}
 **목표 길이**: {targetDuration}초
 
-**섹션 내용**:
+**수업 섹션 내용**:
 {sectionsContent}
 
 **스크립트 구조**:
-1. **Hook (5-10초)**: 시청자의 관심을 끄는 강력한 오프닝
-2. **Core Message (40-50초)**: 5개 섹션의 핵심 내용을 자연스럽게 연결하여 전달
-3. **CTA (5-10초)**: 행동 유도 (구독, 좋아요, 댓글 등)
+1. **Hook (5-10초)**: 흥미로운 질문이나 놀라운 사실로 시작
+2. **Core Message (40-50초)**: 일화, 에피소드, 구체적 예시를 활용한 핵심 내용 전달
+3. **CTA (5-10초)**: 학습 동기 부여 및 행동 유도
 
-**요구사항**:
+**핵심 요구사항**:
 - 한국어로 작성
-- 자연스럽고 구어체적인 톤
-- 시청자가 끝까지 볼 수 있도록 흥미롭게
+- 자연스럽고 친근한 구어체 톤
+- 학습 내용을 이해하기 쉽게 만들기 위해 다음 요소들을 반드시 포함:
+  * 구체적인 일화나 실제 사례
+  * 시청자가 공감할 수 있는 일상적 예시
+  * 놀라운 사실이나 흥미로운 통계
+  * 단계별 설명과 비유
+- 추상적인 개념은 구체적인 예시로 설명
+- 학습자가 "아하!" 하고 깨달을 수 있는 순간 포함
+- 기억하기 쉬운 핵심 포인트 강조
 - 5개 섹션의 내용을 모두 포함하여 구성
 - 각 섹션 간의 연결이 자연스럽게
-- 핵심 메시지를 명확하게 전달
-- 적절한 감정과 리듬감 포함
 
 **출력 형식**:
 스크립트만 작성하고, 각 섹션을 명확히 구분해주세요.
@@ -154,7 +164,7 @@ export class ScriptGeneratorService {
         }
 
         try {
-            console.log('스크립트 생성 시작:', {
+            console.log('교육용 스크립트 생성 시작:', {
                 keyPointsCount: request.keyPoints.length,
                 style: request.style,
                 tone: request.tone,
@@ -180,7 +190,7 @@ export class ScriptGeneratorService {
             const aiResponse = await model.invoke(prompt);
             const script = aiResponse.content as string;
 
-            console.log('스크립트 생성 완료');
+            console.log('교육용 스크립트 생성 완료');
 
             // 예상 지속 시간 계산 (한국어 기준 약 3-4음절/초)
             const estimatedDuration = this.calculateDuration(script);
@@ -202,7 +212,7 @@ export class ScriptGeneratorService {
             // 캐시에 저장
             this.cache.set(cacheKey, scriptResponse);
 
-            console.log('스크립트 생성 완료:', {
+            console.log('교육용 스크립트 생성 완료:', {
                 estimatedDuration,
                 scriptLength: script.length
             });
@@ -280,7 +290,7 @@ export class ScriptGeneratorService {
         }
 
         try {
-            console.log('섹션 기반 스크립트 생성 시작:', {
+            console.log('교육용 섹션 기반 스크립트 생성 시작:', {
                 sectionsCount: request.sections.length,
                 style: request.style,
                 tone: request.tone,
@@ -306,7 +316,7 @@ export class ScriptGeneratorService {
             const aiResponse = await model.invoke(prompt);
             const script = aiResponse.content as string;
 
-            console.log('섹션 기반 스크립트 생성 완료');
+            console.log('교육용 섹션 기반 스크립트 생성 완료');
 
             // 예상 지속 시간 계산 (한국어 기준 약 3-4음절/초)
             const estimatedDuration = this.calculateDuration(script);
@@ -328,7 +338,7 @@ export class ScriptGeneratorService {
             // 캐시에 저장
             this.cache.set(cacheKey, scriptResponse);
 
-            console.log('섹션 기반 스크립트 생성 완료:', {
+            console.log('교육용 섹션 기반 스크립트 생성 완료:', {
                 estimatedDuration,
                 scriptLength: script.length
             });

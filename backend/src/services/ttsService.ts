@@ -1,10 +1,18 @@
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import * as fs from 'fs';
 import * as path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+
+export interface TTSResult {
+    audioPath: string;
+    srtPath?: string;
+    duration: number;
+}
 
 export class TTSService {
     private client: TextToSpeechClient;
     private outputDir: string;
+    private srtDir: string;
 
     constructor() {
         console.log('🔧 TTSService 초기화 시작...');
@@ -18,7 +26,9 @@ export class TTSService {
         }
 
         this.outputDir = path.join(__dirname, '../../uploads/audio');
+        this.srtDir = path.join(__dirname, '../../uploads/audio');
         console.log('📁 오디오 출력 디렉토리:', this.outputDir);
+        console.log('📁 SRT 출력 디렉토리:', this.srtDir);
 
         // 오디오 출력 디렉토리 생성
         try {
@@ -44,9 +54,96 @@ export class TTSService {
     }
 
     /**
-     * 텍스트를 음성으로 변환
+     * 텍스트를 SSML 형식으로 변환
      */
-    async textToSpeech(text: string, filename: string): Promise<string> {
+    private textToSSML(text: string): string {
+        // 특수 문자 이스케이프
+        const escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+
+        // SSML 형식으로 감싸기 (한국어 여성 음성, 자연스러운 속도)
+        return `<speak>${escaped}</speak>`;
+    }
+
+    /**
+     * 텍스트를 문장 단위로 분할
+     */
+    private splitIntoSentences(text: string): string[] {
+        // 마침표, 느낌표, 물음표로 문장 분리 (숫자 소수점은 제외)
+        const sentences = text
+            .split(/(?<=[\.!?])(?!\d)\s+/g)
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+
+        return sentences.length > 0 ? sentences : [text];
+    }
+
+    /**
+     * 오디오 파일의 실제 길이를 측정 (초 단위)
+     */
+    private async getAudioDuration(audioPath: string): Promise<number> {
+        return new Promise((resolve, reject) => {
+            ffmpeg.ffprobe(audioPath, (err, metadata) => {
+                if (err) {
+                    console.warn(`⚠️ 오디오 길이 측정 실패, 추정값 사용: ${err.message}`);
+                    // 실패 시 파일 크기 기반으로 추정 (1MB ≈ 1분)
+                    const stats = fs.statSync(audioPath);
+                    const estimated = Math.round((stats.size / 1024 / 1024) * 60);
+                    resolve(estimated);
+                } else {
+                    const duration = metadata.format?.duration || 0;
+                    resolve(duration);
+                }
+            });
+        });
+    }
+
+    /**
+     * SRT 파일 생성
+     */
+    private async generateSRT(
+        sentences: string[],
+        totalDuration: number,
+        outputPath: string
+    ): Promise<void> {
+        const srtLines: string[] = [];
+        const blockCount = sentences.length;
+        const durationPerBlock = totalDuration / blockCount;
+
+        for (let i = 0; i < sentences.length; i++) {
+            const startTime = i * durationPerBlock;
+            const endTime = i === sentences.length - 1 ? totalDuration : (i + 1) * durationPerBlock;
+
+            srtLines.push(`${i + 1}`);
+            srtLines.push(`${this.formatSRTTime(startTime)} --> ${this.formatSRTTime(endTime)}`);
+            srtLines.push(sentences[i]);
+            srtLines.push(''); // 빈 줄
+        }
+
+        fs.writeFileSync(outputPath, srtLines.join('\n'), 'utf8');
+        console.log(`✅ SRT 파일 생성 완료: ${outputPath}`);
+    }
+
+    /**
+     * 초 단위 시간을 SRT 형식으로 변환
+     */
+    private formatSRTTime(seconds: number): string {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        const milliseconds = Math.floor((seconds % 1) * 1000);
+
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+    }
+
+    /**
+     * 텍스트를 음성으로 변환 (SSML 사용, SRT 파일 생성)
+     */
+    async textToSpeech(text: string, filename: string, generateSRT: boolean = true): Promise<TTSResult> {
         try {
             console.log('=== TTS 변환 디버깅 시작 ===');
             console.log(`🎤 TTS 변환 시작: ${filename}`);
@@ -62,9 +159,14 @@ export class TTSService {
                 throw new Error('파일명이 비어있습니다.');
             }
 
-            // 한국어 여성 음성으로 설정
+            // 텍스트를 SSML로 변환
+            const ssml = this.textToSSML(text);
+            console.log('📝 SSML 변환 완료');
+            console.log(`📝 SSML 길이: ${ssml.length}자`);
+
+            // 한국어 여성 음성으로 설정 (SSML 사용)
             const request = {
-                input: { text },
+                input: { ssml }, // SSML 사용
                 voice: {
                     languageCode: 'ko-KR',
                     name: 'ko-KR-Neural2-A', // 한국어 여성 음성
@@ -107,8 +209,28 @@ export class TTSService {
             }
 
             console.log(`✅ TTS 변환 완료: ${outputPath}`);
+
+            // 오디오 파일의 실제 길이 측정
+            const duration = await this.getAudioDuration(outputPath);
+            console.log(`⏱️ 오디오 길이: ${duration.toFixed(2)}초`);
+
+            // SRT 파일 생성
+            let srtPath: string | undefined;
+            if (generateSRT) {
+                const sentences = this.splitIntoSentences(text);
+                console.log(`📝 문장 분할 완료: ${sentences.length}개 문장`);
+
+                srtPath = path.join(this.srtDir, `${filename}.srt`);
+                await this.generateSRT(sentences, duration, srtPath);
+            }
+
             console.log('=== TTS 변환 디버깅 완료 ===');
-            return outputPath;
+
+            return {
+                audioPath: outputPath,
+                srtPath,
+                duration
+            };
 
         } catch (error) {
             console.error('=== TTS 변환 에러 디버깅 ===');
@@ -124,14 +246,14 @@ export class TTSService {
     /**
      * 스크립트를 여러 개의 음성 파일로 분할하여 변환
      */
-    async generateAudioFromScript(script: any, baseFilename: string): Promise<string[]> {
+    async generateAudioFromScript(script: any, baseFilename: string, generateSRT: boolean = true): Promise<Array<{ audioPath: string; srtPath?: string; duration: number; section: string }>> {
         try {
             console.log('=== 스크립트 오디오 생성 디버깅 시작 ===');
             console.log('🎬 스크립트에서 오디오 생성 시작');
             console.log('📝 스크립트 객체:', JSON.stringify(script, null, 2));
             console.log('📁 기본 파일명:', baseFilename);
 
-            const audioFiles: string[] = [];
+            const audioResults: Array<{ audioPath: string; srtPath?: string; duration: number; section: string }> = [];
             const sections = ['hook', 'coreMessage', 'cta'];
 
             for (const section of sections) {
@@ -143,19 +265,32 @@ export class TTSService {
                     const sectionFilename = `${baseFilename}_${section}`;
                     console.log(`${section} 섹션 파일명: ${sectionFilename}`);
 
-                    const audioPath = await this.textToSpeech(script[section], sectionFilename);
-                    audioFiles.push(audioPath);
+                    const result = await this.textToSpeech(script[section], sectionFilename, generateSRT);
+                    audioResults.push({
+                        audioPath: result.audioPath,
+                        srtPath: result.srtPath,
+                        duration: result.duration,
+                        section
+                    });
 
-                    console.log(`✅ ${section} 섹션 오디오 생성 완료: ${audioPath}`);
+                    console.log(`✅ ${section} 섹션 오디오 생성 완료: ${result.audioPath}`);
+                    if (result.srtPath) {
+                        console.log(`✅ ${section} 섹션 SRT 생성 완료: ${result.srtPath}`);
+                    }
                 } else {
                     console.log(`⚠️ ${section} 섹션이 비어있어 건너뜀`);
                 }
             }
 
-            console.log(`🎉 전체 오디오 생성 완료: ${audioFiles.length}개 파일`);
-            console.log('생성된 파일들:', audioFiles);
+            console.log(`🎉 전체 오디오 생성 완료: ${audioResults.length}개 파일`);
+            console.log('생성된 파일들:', audioResults.map(r => ({
+                audio: r.audioPath,
+                srt: r.srtPath,
+                duration: r.duration,
+                section: r.section
+            })));
             console.log('=== 스크립트 오디오 생성 디버깅 완료 ===');
-            return audioFiles;
+            return audioResults;
 
         } catch (error) {
             console.error('=== 스크립트 오디오 생성 에러 디버깅 ===');
