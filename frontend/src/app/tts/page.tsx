@@ -89,6 +89,21 @@ const TTSPage: React.FC = () => {
                     if (data.success && data.audioFiles && data.audioFiles.length > 0) {
                         // 첫 번째 오디오 파일을 메인으로 사용
                         const mainAudioFile = data.audioFiles[0];
+                        
+                        // 디버깅: 파일명과 URL 확인
+                        console.log('📁 메인 오디오 파일:', mainAudioFile);
+                        console.log('🔗 오디오 URL:', `${API_URL}/audio/${mainAudioFile.filename}`);
+                        
+                        // 각 오디오 파일의 URL도 로깅
+                        data.audioFiles.forEach((audioFile: any, index: number) => {
+                            console.log(`🎵 오디오 파일 ${index + 1}:`, {
+                                filename: audioFile.filename,
+                                url: `${API_URL}/audio/${audioFile.filename}`,
+                                size: audioFile.size,
+                                duration: audioFile.duration
+                            });
+                        });
+                        
                         return {
                             group,
                             script,
@@ -349,6 +364,19 @@ const TTSPage: React.FC = () => {
                                                 style={{
                                                     width: '100%',
                                                     marginBottom: '8px'
+                                                }}
+                                                onError={(e) => {
+                                                    console.error('❌ 오디오 로드 실패:', {
+                                                        filename: audioFile.filename,
+                                                        url: `${API_URL}/audio/${audioFile.filename}`,
+                                                        error: e
+                                                    });
+                                                }}
+                                                onLoadStart={() => {
+                                                    console.log('🔄 오디오 로드 시작:', `${API_URL}/audio/${audioFile.filename}`);
+                                                }}
+                                                onCanPlay={() => {
+                                                    console.log('✅ 오디오 재생 가능:', `${API_URL}/audio/${audioFile.filename}`);
                                                 }}
                                             >
                                                 <source src={`${API_URL}/audio/${audioFile.filename}`} type="audio/mpeg" />

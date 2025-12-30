@@ -36,7 +36,6 @@
     "langchain": "^0.3.30",
     "multer": "^2.0.1",
     "node-cron": "^4.2.1",
-    "node-pptx": "^1.0.0",
     "openai": "^5.20.3",
     "pdfjs-dist": "^5.4.296",
     "zod": "^3.22.4"

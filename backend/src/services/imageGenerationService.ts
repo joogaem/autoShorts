@@ -52,105 +52,70 @@ export class ImageGenerationService {
             // 이미지 생성을 위한 프롬프트 구성
             const imagePrompt = this.buildImagePrompt(request);
 
-            // 사용 가능한 모델 목록 확인 (디버깅용)
-            try {
-                const modelsPager = await this.genAI.models.list();
-                const modelNames: string[] = [];
-                // Pager를 배열로 변환
-                for await (const model of modelsPager) {
-                    if (model.name) {
-                        modelNames.push(model.name);
-                    }
-                    if (modelNames.length >= 10) break; // 처음 10개만
-                }
-                console.log('📋 사용 가능한 모델 목록 (처음 10개):', modelNames);
-            } catch (err) {
-                console.log('⚠️ 모델 목록 조회 실패 (계속 진행):', err);
-            }
-
-            // Gemini 이미지 생성 모델 시도 (여러 모델명 시도)
-            const modelNames = [
-                'gemini-3.0-pro-image',
-                'gemini-3-pro-image',
-                'gemini-2.0-flash-exp',
-                'gemini-2.5-flash-image' // 폴백
-            ];
-
-            let response: any = null;
-            let lastError: any = null;
-            let usedModel = '';
-
-            for (const modelName of modelNames) {
-                try {
-                    console.log(`🎨 Gemini 이미지 생성 시도 (모델: ${modelName})`);
-                    response = await this.genAI.models.generateContent({
-                        model: modelName,
-                        contents: imagePrompt,
-                    });
-                    usedModel = modelName;
-                    console.log(`✅ 모델 ${modelName} 성공!`);
-                    break;
-                } catch (error: any) {
-                    console.log(`❌ 모델 ${modelName} 실패:`, error.message);
-                    lastError = error;
-                    continue;
-                }
-            }
-
-            if (!response) {
-                throw new Error(`모든 이미지 생성 모델 시도 실패. 마지막 에러: ${lastError?.message || 'Unknown error'}`);
-            }
-
-            console.log('🎨 Gemini 이미지 생성 요청 성공:', {
-                prompt: imagePrompt,
-                model: usedModel
+            console.log('🎨 Gemini 이미지 생성 시도 (모델: gemini-2.5-flash-image)');
+            const response = await this.genAI.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: imagePrompt,
             });
 
-            // 구조 로깅
-            try {
-                console.log('🧩 Gemini raw response keys:', Object.keys(response ?? {}));
-                const first = (response as any)?.candidates?.[0]?.content?.parts?.[0];
-                if (first?.text) console.log('📄 text part (first 200):', first.text.slice(0, 200));
-                if (first?.inlineData) console.log('🖼️ inlineData length:', first.inlineData.data?.length ?? 0);
-            } catch { }
-            const imageId = this.generateImageId();
+            console.log('✅ Gemini API 응답 수신 성공');
 
-            // 응답에서 이미지 데이터 추출
+            const imageId = this.generateImageId();
             let imageData: string | null = null;
-            if ((response as any).candidates && (response as any).candidates[0] && (response as any).candidates[0].content) {
-                for (const part of (response as any).candidates[0].content.parts) {
-                    if ((part as any).inlineData?.data) {
-                        imageData = (part as any).inlineData.data as string;
+
+            // 응답에서 이미지 데이터 추출 (예제 코드 방식)
+            if (response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts) {
+                for (const part of response.candidates[0].content.parts) {
+                    if (part.text) {
+                        console.log('📄 텍스트 응답:', part.text);
+                    } else if (part.inlineData && part.inlineData.data) {
+                        imageData = part.inlineData.data || null;
+                        if (imageData) {
+                            console.log('🖼️ 이미지 데이터 발견! 길이:', imageData.length);
+                        }
                         break;
                     }
                 }
             }
 
             if (!imageData) {
-                // 텍스트가 왔는지 보여주기 (안전 필터/설명 등)
-                const textFallback = (response as any)?.candidates?.[0]?.content?.parts
-                    ?.map((p: any) => p?.text)
-                    .filter(Boolean)
-                    .join('\n') || '';
-                console.error('⚠️ Gemini 응답에 inlineData(이미지)가 없습니다. 텍스트 응답:', textFallback.slice(0, 500));
+                console.error('⚠️ Gemini 응답에 inlineData(이미지)가 없습니다.');
                 throw new Error('Gemini API에서 이미지 데이터를 받지 못했습니다.');
             }
 
-            console.log('✅ Gemini 이미지 생성 성공:', {
+            console.log('✅ Gemini 이미지 데이터 추출 성공:', {
                 imageId: imageId,
                 dataLength: imageData.length
             });
 
-            // Base64 데이터를 파일로 저장하고 경량 URL 반환
-            const fileUrl = this.saveImageToFile(`data:image/png;base64,${imageData}`, imageId);
+            // Base64 데이터를 직접 Buffer로 변환하여 파일로 저장
+            // Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
+            const tempDir = process.platform === 'win32' 
+                ? 'C:\\ffmpeg' 
+                : path.join(process.cwd(), 'temp-images');
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            const fileName = `${imageId}.png`;
+            const filePath = path.join(tempDir, fileName);
+            const imageBuffer = Buffer.from(imageData, 'base64');
+            fs.writeFileSync(filePath, imageBuffer);
+
+            console.log('✅ 이미지 파일 저장 완료:', {
+                fileName: fileName,
+                filePath: filePath,
+                fileSize: imageBuffer.length,
+                relativePath: `/temp-images/${fileName}`
+            });
 
             return {
                 id: imageId,
-                url: fileUrl,
+                url: `/temp-images/${fileName}`,
                 prompt: request.prompt,
                 metadata: {
                     provider: 'gemini-image',
-                    model: usedModel || 'gemini-3.0-pro-image',
+                    model: 'gemini-2.5-flash-image',
                     size: this.getImageSize(request.aspectRatio || '1:1'),
                     createdAt: new Date()
                 }
@@ -296,8 +261,10 @@ export class ImageGenerationService {
      */
     private saveImageToFile(base64Data: string, imageId: string): string {
         try {
-            // temp-images 디렉토리가 없으면 생성
-            const tempDir = path.join(process.cwd(), 'temp-images');
+            // Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
+            const tempDir = process.platform === 'win32' 
+                ? 'C:\\ffmpeg' 
+                : path.join(process.cwd(), 'temp-images');
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
             }

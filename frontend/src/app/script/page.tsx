@@ -49,6 +49,21 @@ const ScriptPage: React.FC = () => {
         // 5개 섹션으로 나누기
         const sections = splitIntoFiveSections(allKeyPoints);
         setEditableSections(sections);
+
+        // editableSections가 설정된 후, selectedSectionIndex가 있으면 해당 섹션의 내용을 selectedSectionContent에 설정
+        if ((data as any).selectedSectionIndex !== undefined && sections.length > 0) {
+            const sectionIndex = (data as any).selectedSectionIndex;
+            if (sectionIndex >= 0 && sectionIndex < sections.length) {
+                // groupData의 selectedSection.content가 있으면 우선 사용, 없으면 editableSections에서 가져오기
+                const sectionContent = (data as any).selectedSection?.content || sections[sectionIndex];
+                setSelectedSectionContent(sectionContent);
+                console.log('선택된 섹션 내용 설정:', {
+                    sectionIndex,
+                    contentLength: sectionContent.length,
+                    contentPreview: sectionContent.substring(0, 100) + '...'
+                });
+            }
+        }
     }, []);
 
     // 내용을 5개 섹션으로 나누는 함수
@@ -83,9 +98,12 @@ const ScriptPage: React.FC = () => {
         if (selectedSectionIndex === index) {
             // 이미 선택된 섹션을 클릭하면 선택 취소
             setSelectedSectionIndex(null);
+            setSelectedSectionContent('');
         } else {
             // 다른 섹션 선택
             setSelectedSectionIndex(index);
+            // 선택된 섹션의 내용을 selectedSectionContent에 설정
+            setSelectedSectionContent(editableSections[index] || '');
         }
     };
 
@@ -107,8 +125,17 @@ const ScriptPage: React.FC = () => {
 
         try {
             // 선택된 섹션을 사용자 프롬프트로 변환
-            const selectedSection = editableSections[selectedSectionIndex];
+            // selectedSectionContent가 있으면 우선 사용, 없으면 editableSections에서 가져오기
+            const selectedSection = selectedSectionContent || editableSections[selectedSectionIndex];
             const userPrompt = `교육 내용: ${selectedSection}`;
+
+            // 디버깅: 전송되는 프롬프트 확인
+            console.log('=== 스토리보드 생성 요청 ===');
+            console.log('선택된 섹션 인덱스:', selectedSectionIndex);
+            console.log('selectedSectionContent:', selectedSectionContent ? selectedSectionContent.substring(0, 100) + '...' : '(없음)');
+            console.log('editableSections[selectedSectionIndex]:', editableSections[selectedSectionIndex] ? editableSections[selectedSectionIndex].substring(0, 100) + '...' : '(없음)');
+            console.log('실제 사용된 섹션 내용:', selectedSection.substring(0, 200) + '...');
+            console.log('전송되는 userPrompt:', userPrompt.substring(0, 200) + '...');
 
             const response = await fetch(API_URL + '/api/generate-storyboard', {
                 method: 'POST',

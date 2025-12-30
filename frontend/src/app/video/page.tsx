@@ -230,7 +230,7 @@ const VideoPage: React.FC = () => {
                         color: '#6b7280',
                         marginBottom: '32px'
                     }}>
-                        TTS 오디오와 생성된 이미지를 조합하여 영상을 생성합니다
+                        각 장면의 TTS 오디오와 이미지를 조합하여 영상을 생성합니다. 각 장면은 TTS 시간 동안 하나의 이미지를 유지합니다.
                     </p>
                 </div>
 
@@ -405,8 +405,7 @@ const VideoPage: React.FC = () => {
                                                     borderRadius: '6px',
                                                     border: '1px solid #e5e7eb'
                                                 }}>
-                                                    <div style={{ marginBottom: '8px' }}>영상 길이: {video.duration}초</div>
-                                                    <div style={{ marginBottom: '8px' }}>사용된 이미지: {video.imagesCount}개</div>
+                                                    <div style={{ marginBottom: '8px' }}>영상 길이: {video.duration}초 (TTS 시간에 맞춤)</div>
                                                     <div>해상도: 1080x1920 (9:16)</div>
                                                 </div>
                                             </div>

@@ -21,10 +21,12 @@ router.post('/', async (req: Request, res: Response) => {
         }
 
         console.log('스토리보드 생성 파라미터:', {
-            userPrompt: userPrompt.substring(0, 100) + '...',
+            userPrompt: userPrompt.substring(0, 200) + (userPrompt.length > 200 ? '...' : ''),
+            userPromptLength: userPrompt.length,
             style: style || 'educational',
             tone: tone || 'friendly'
         });
+        console.log('전체 userPrompt 내용:', userPrompt);
 
         // 스토리보드 생성
         const storyboardService = StoryboardGeneratorService.getInstance();

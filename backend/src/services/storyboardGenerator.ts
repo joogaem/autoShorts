@@ -44,8 +44,10 @@ export class StoryboardGeneratorService {
     }
 
     private generateCacheKey(request: StoryboardRequest): string {
+        // userPrompt를 정규화하여 공백 차이로 인한 캐시 미스 방지
+        const normalizedPrompt = request.userPrompt.trim().replace(/\s+/g, ' ');
         const content = JSON.stringify({
-            userPrompt: request.userPrompt,
+            userPrompt: normalizedPrompt,
             style: request.style,
             tone: request.tone
         });
@@ -53,12 +55,21 @@ export class StoryboardGeneratorService {
     }
 
     public async generateStoryboard(request: StoryboardRequest): Promise<StoryboardResponse> {
-        const cacheKey = this.generateCacheKey(request);
-
-        // 캐시 확인
-        if (this.cache.has(cacheKey)) {
-            console.log('캐시된 스토리보드 사용');
-            return this.cache.get(cacheKey)!;
+        // 환경 변수로 캐시 사용 여부 제어 (기본값: 개발 환경에서는 비활성화)
+        // STORYBOARD_CACHE_ENABLED=true로 설정하면 캐시 활성화
+        const cacheEnabled = process.env.STORYBOARD_CACHE_ENABLED === 'true' || 
+                             (process.env.NODE_ENV === 'production' && process.env.STORYBOARD_CACHE_ENABLED !== 'false');
+        
+        if (cacheEnabled) {
+            const cacheKey = this.generateCacheKey(request);
+            
+            // 캐시 확인
+            if (this.cache.has(cacheKey)) {
+                console.log('캐시된 스토리보드 사용 (캐시 키:', cacheKey.substring(0, 20) + '...)');
+                return this.cache.get(cacheKey)!;
+            }
+        } else {
+            console.log('캐시 비활성화: 새로운 스토리보드 생성');
         }
 
         try {
@@ -274,8 +285,14 @@ Remember: Return ONLY the JSON array. No additional text or explanation.`;
                 estimatedDuration: 45 // 5장면 * 9초 평균
             };
 
-            // 캐시에 저장
-            this.cache.set(cacheKey, storyboardResponse);
+            // 캐시가 활성화된 경우에만 캐시에 저장
+            const cacheEnabled = process.env.STORYBOARD_CACHE_ENABLED === 'true' || 
+                                 (process.env.NODE_ENV === 'production' && process.env.STORYBOARD_CACHE_ENABLED !== 'false');
+            if (cacheEnabled) {
+                const cacheKey = this.generateCacheKey(request);
+                this.cache.set(cacheKey, storyboardResponse);
+                console.log('스토리보드 캐시에 저장됨 (캐시 키:', cacheKey.substring(0, 20) + '...)');
+            }
 
             console.log('스토리보드 생성 완료:', {
                 scenesCount: scenes.length,

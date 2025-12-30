@@ -3,6 +3,8 @@ import ffmpeg from 'fluent-ffmpeg';
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
+// FFmpeg 경로 자동 설정
+import '../config/ffmpeg';
 
 const router = express.Router();
 const writeFile = promisify(fs.writeFile);
@@ -22,7 +24,10 @@ router.post('/', async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, error: 'videoUrls 배열이 필요합니다.' });
         }
 
-        const tempDir = path.join(process.cwd(), 'temp-videos');
+        // Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
+        const tempDir = process.platform === 'win32' 
+            ? 'C:\\ffmpeg' 
+            : path.join(process.cwd(), 'temp-videos');
         if (!(await exists(tempDir))) {
             await mkdir(tempDir, { recursive: true });
         }

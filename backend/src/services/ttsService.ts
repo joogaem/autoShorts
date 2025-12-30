@@ -2,6 +2,9 @@ import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import * as fs from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
+import { GOOGLE_APPLICATION_CREDENTIALS } from '../config/env';
+// FFmpeg 경로 자동 설정
+import '../config/ffmpeg';
 
 export interface TTSResult {
     audioPath: string;
@@ -17,12 +20,79 @@ export class TTSService {
     constructor() {
         console.log('🔧 TTSService 초기화 시작...');
 
+        // Google Cloud credentials 경로 확인 및 정규화
+        let credentialsPath: string | undefined;
+        
+        if (GOOGLE_APPLICATION_CREDENTIALS) {
+            // macOS/Linux 경로 형식(/Volumes/...)을 Windows 경로로 변환
+            let normalizedPath = GOOGLE_APPLICATION_CREDENTIALS;
+            
+            // 절대 경로가 /Volumes로 시작하는 경우 (macOS 경로)
+            if (normalizedPath.startsWith('/Volumes/')) {
+                console.warn('⚠️ macOS 경로 형식 감지됨. Windows 경로로 변환 필요합니다.');
+                console.warn(`원본 경로: ${normalizedPath}`);
+                // Windows에서는 이 경로를 직접 사용할 수 없으므로 에러 발생
+                throw new Error(
+                    `Google Cloud credentials 경로가 macOS 형식입니다: ${normalizedPath}\n` +
+                    `Windows 환경에서는 올바른 Windows 경로 형식으로 설정해주세요.\n` +
+                    `예: C:\\path\\to\\your\\credentials.json 또는 상대 경로 사용`
+                );
+            }
+            
+            // 상대 경로인 경우 절대 경로로 변환
+            if (!path.isAbsolute(normalizedPath)) {
+                // 프로젝트 루트 기준으로 상대 경로 해석
+                const projectRoot = path.resolve(__dirname, '../../..');
+                normalizedPath = path.resolve(projectRoot, normalizedPath);
+            }
+            
+            // 경로 정규화 (Windows 경로 구분자 처리)
+            normalizedPath = path.normalize(normalizedPath);
+            
+            // 파일 존재 확인
+            if (!fs.existsSync(normalizedPath)) {
+                throw new Error(
+                    `Google Cloud credentials 파일을 찾을 수 없습니다: ${normalizedPath}\n` +
+                    `원본 경로: ${GOOGLE_APPLICATION_CREDENTIALS}\n` +
+                    `파일이 존재하는지 확인하고 GOOGLE_APPLICATION_CREDENTIALS 환경 변수를 올바르게 설정해주세요.`
+                );
+            }
+            
+            credentialsPath = normalizedPath;
+            console.log(`✅ Google Cloud credentials 경로 확인: ${credentialsPath}`);
+            
+            // 환경 변수 업데이트 (TextToSpeechClient가 읽을 수 있도록)
+            process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+        } else {
+            console.warn('⚠️ GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.');
+            console.warn('Google Cloud의 기본 인증 방식을 사용합니다 (gcloud CLI 또는 Application Default Credentials).');
+        }
+
         try {
-            this.client = new TextToSpeechClient();
+            // credentials 경로가 있으면 명시적으로 전달
+            const clientOptions = credentialsPath 
+                ? { keyFilename: credentialsPath }
+                : {};
+            
+            this.client = new TextToSpeechClient(clientOptions);
             console.log('✅ Google Cloud TTS 클라이언트 생성 성공');
         } catch (error) {
             console.error('❌ Google Cloud TTS 클라이언트 생성 실패:', error);
-            throw new Error(`TTS 클라이언트 초기화 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+            const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
+            
+            // 더 자세한 에러 메시지 제공
+            if (errorMessage.includes('ENOENT') || errorMessage.includes('does not exist')) {
+                throw new Error(
+                    `TTS 클라이언트 초기화 실패: Google Cloud credentials 파일을 찾을 수 없습니다.\n` +
+                    `설정된 경로: ${GOOGLE_APPLICATION_CREDENTIALS || '(설정되지 않음)'}\n` +
+                    `해결 방법:\n` +
+                    `1. .env 파일에 GOOGLE_APPLICATION_CREDENTIALS를 올바른 Windows 경로로 설정하세요.\n` +
+                    `2. 예: GOOGLE_APPLICATION_CREDENTIALS=C:\\path\\to\\credentials.json\n` +
+                    `3. 또는 상대 경로 사용: GOOGLE_APPLICATION_CREDENTIALS=./credentials.json`
+                );
+            }
+            
+            throw new Error(`TTS 클라이언트 초기화 실패: ${errorMessage}`);
         }
 
         this.outputDir = path.join(__dirname, '../../uploads/audio');

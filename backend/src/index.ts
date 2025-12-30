@@ -37,8 +37,31 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 정적 파일 서빙 설정
-app.use('/temp-images', express.static(path.join(__dirname, '../temp-images')));
-app.use('/temp-videos', express.static(path.join(__dirname, '../temp-videos')));
+// Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
+const TEMP_IMAGES_DIR = process.platform === 'win32' 
+    ? 'C:\\ffmpeg' 
+    : path.join(__dirname, '../temp-images');
+const TEMP_VIDEOS_DIR = process.platform === 'win32' 
+    ? 'C:\\ffmpeg' 
+    : path.join(__dirname, '../temp-videos');
+
+// 디렉토리 생성 및 로그 출력
+if (!fs.existsSync(TEMP_IMAGES_DIR)) {
+    fs.mkdirSync(TEMP_IMAGES_DIR, { recursive: true });
+    console.log(`✅ 이미지 디렉토리 생성: ${TEMP_IMAGES_DIR}`);
+} else {
+    console.log(`📁 이미지 디렉토리 경로: ${TEMP_IMAGES_DIR}`);
+}
+
+if (!fs.existsSync(TEMP_VIDEOS_DIR)) {
+    fs.mkdirSync(TEMP_VIDEOS_DIR, { recursive: true });
+    console.log(`✅ 영상 디렉토리 생성: ${TEMP_VIDEOS_DIR}`);
+} else {
+    console.log(`📁 영상 디렉토리 경로: ${TEMP_VIDEOS_DIR}`);
+}
+
+app.use('/temp-images', express.static(TEMP_IMAGES_DIR));
+app.use('/temp-videos', express.static(TEMP_VIDEOS_DIR));
 app.use('/audio', express.static(path.join(__dirname, '../uploads/audio')));
 
 app.get('/', (req, res) => {
@@ -78,7 +101,7 @@ cron.schedule('0 * * * *', () => {
 });
 
 // 1시간마다 /temp-images 폴더에서 24시간 이상 지난 파일 삭제
-const TEMP_IMAGES_DIR = path.join(__dirname, '../temp-images');
+// TEMP_IMAGES_DIR은 위에서 이미 정의됨 (정적 파일 서빙 설정 부분)
 cron.schedule('0 * * * *', () => {
     if (!fs.existsSync(TEMP_IMAGES_DIR)) return;
 
@@ -100,7 +123,7 @@ cron.schedule('0 * * * *', () => {
 });
 
 // 1시간마다 /temp-videos 폴더에서 24시간 이상 지난 파일 삭제
-const TEMP_VIDEOS_DIR = path.join(__dirname, '../temp-videos');
+// TEMP_VIDEOS_DIR은 위에서 이미 정의됨 (정적 파일 서빙 설정 부분)
 cron.schedule('0 * * * *', () => {
     if (!fs.existsSync(TEMP_VIDEOS_DIR)) return;
 

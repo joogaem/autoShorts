@@ -1,5 +1,6 @@
 import express from 'express';
 import * as fs from 'fs';
+import * as path from 'path';
 import { TTSService } from '../services/ttsService';
 
 const router = express.Router();
@@ -81,11 +82,15 @@ router.post('/generate', async (req, res) => {
         const audioInfo = audioResults.map(result => {
             const audioStats = fs.statSync(result.audioPath);
             console.log(`📁 파일 정보: ${result.audioPath} - 크기: ${audioStats.size} bytes, 시간: ${result.duration}초`);
+            // Windows 경로 구분자(\\)와 Unix 경로 구분자(/) 모두 처리
+            const filename = path.basename(result.audioPath);
+            const srtFilename = result.srtPath ? path.basename(result.srtPath) : undefined;
+            console.log(`📝 추출된 파일명: ${filename}`);
             return {
                 path: result.audioPath,
-                filename: result.audioPath.split('/').pop(),
+                filename: filename,
                 srtPath: result.srtPath,
-                srtFilename: result.srtPath ? result.srtPath.split('/').pop() : undefined,
+                srtFilename: srtFilename,
                 duration: result.duration,
                 size: audioStats.size,
                 section: result.section
@@ -156,13 +161,18 @@ router.post('/simple', async (req, res) => {
         const audioStats = fs.statSync(result.audioPath);
         console.log('✅ 단일 TTS API 완료:', result.audioPath);
 
+        // Windows 경로 구분자(\\)와 Unix 경로 구분자(/) 모두 처리
+        const audioFilename = path.basename(result.audioPath);
+        const srtFilename = result.srtPath ? path.basename(result.srtPath) : undefined;
+        console.log(`📝 추출된 파일명: ${audioFilename}`);
+
         res.json({
             success: true,
             audioFile: {
                 path: result.audioPath,
-                filename: result.audioPath.split('/').pop(),
+                filename: audioFilename,
                 srtPath: result.srtPath,
-                srtFilename: result.srtPath ? result.srtPath.split('/').pop() : undefined,
+                srtFilename: srtFilename,
                 duration: result.duration,
                 size: audioStats.size
             },
