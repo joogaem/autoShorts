@@ -14,7 +14,6 @@ const ScriptPage: React.FC = () => {
     const [keyPoints, setKeyPoints] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [editableSections, setEditableSections] = useState<string[]>([]);
-    const [isEditing, setIsEditing] = useState(false);
     const [selectedSectionIndex, setSelectedSectionIndex] = useState<number | null>(null);
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [selectedSectionContent, setSelectedSectionContent] = useState<string>('');
@@ -55,34 +54,6 @@ const ScriptPage: React.FC = () => {
         });
         setEditableSections(sections);
     }, []);
-
-    // 내용을 5개 섹션으로 나누는 함수
-    const splitIntoFiveSections = (keyPoints: any[]) => {
-        const sections: string[] = [];
-        const totalPoints = keyPoints.length;
-        const pointsPerSection = Math.ceil(totalPoints / 5);
-
-        for (let i = 0; i < 5; i++) {
-            const startIndex = i * pointsPerSection;
-            const endIndex = Math.min(startIndex + pointsPerSection, totalPoints);
-            const sectionPoints = keyPoints.slice(startIndex, endIndex);
-
-            // 제목에서 "외국어습득론1주차1교시" 같은 패턴 제거
-            const cleanContent = sectionPoints.map(point => {
-                let cleanTitle = point.title || '';
-                // 숫자+주차+숫자+교시 패턴 제거
-                cleanTitle = cleanTitle.replace(/\d+주차\d+교시/g, '').trim();
-                // 앞뒤 공백 제거
-                cleanTitle = cleanTitle.replace(/^\s*[-•]\s*/, '').trim();
-
-                return `${cleanTitle ? cleanTitle + ': ' : ''}${point.content || ''}`;
-            }).join(' ');
-
-            sections.push(cleanContent);
-        }
-
-        return sections;
-    };
 
     const handleSectionSelect = (index: number) => {
         if (selectedSectionIndex === index) {
@@ -161,11 +132,6 @@ const ScriptPage: React.FC = () => {
         const newSections = [...editableSections];
         newSections[index] = content;
         setEditableSections(newSections);
-    };
-
-    // 편집 모드 토글
-    const toggleEditMode = () => {
-        setIsEditing(!isEditing);
     };
 
     // 스토리보드 관련 핸들러들

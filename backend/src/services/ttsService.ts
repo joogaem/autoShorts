@@ -20,7 +20,6 @@ export interface TTSResult {
 export class TTSService {
     private client: TextToSpeechClient;
     private outputDir: string;
-    private srtDir: string;
 
     constructor() {
         console.log('🔧 TTSService 초기화 시작...');
@@ -34,9 +33,7 @@ export class TTSService {
         }
 
         this.outputDir = path.join(__dirname, '../../uploads/audio');
-        this.srtDir = path.join(__dirname, '../../uploads/audio');
         console.log('📁 오디오 출력 디렉토리:', this.outputDir);
-        console.log('📁 SRT 출력 디렉토리:', this.srtDir);
 
         // 오디오 출력 디렉토리 생성
         try {
@@ -86,7 +83,7 @@ export class TTSService {
         return `<speak>${parts.join(' ')}</speak>`;
     }
 
-    private mergeShorCues(cues: string[], maxChars: number, minChars: number = 10): string[] {
+    private mergeShortCues(cues: string[], maxChars: number, minChars: number = 10): string[] {
         const MERGE_TOLERANCE = 6; // 짧은 이음말(합니다/입니다 등)은 maxChars 초과해도 병합
         const merged: string[] = [];
         for (const s of cues) {
@@ -156,61 +153,10 @@ export class TTSService {
     }
 
     /**
-     * SRT 파일 생성 (글자 수 기준 cue 분할 포함)
-     */
-    private async generateSRT(
-        sentences: string[],
-        totalDuration: number,
-        outputPath: string
-    ): Promise<void> {
-        const MAX_CHARS_PER_CUE = 22; // 한 cue 최대 글자 수
-        const MIN_CHARS_PER_CUE = 10; // 이 미만은 이전 cue에 병합
-
-        // 1단계: 글자 수 초과 문장 추가 분할
-        let cues: string[] = sentences.flatMap(s => this.splitByCharLimit(s, MAX_CHARS_PER_CUE));
-
-        // 2단계: 너무 짧은 cue 병합
-        const merged: string[] = [];
-        for (const s of cues) {
-            if (merged.length === 0) { merged.push(s); continue; }
-            const last = merged[merged.length - 1];
-            if (s.length < MIN_CHARS_PER_CUE && last.length + s.length + 1 <= MAX_CHARS_PER_CUE) {
-                merged[merged.length - 1] = `${last} ${s}`.trim();
-            } else {
-                merged.push(s);
-            }
-        }
-        cues = merged;
-
-        // 3단계: 총 duration 균등 분배
-        const blockCount = cues.length;
-        const durationPerBlock = totalDuration / blockCount;
-        const srtLines: string[] = [];
-
-        for (let i = 0; i < cues.length; i++) {
-            const startTime = i * durationPerBlock;
-            const endTime = i === cues.length - 1 ? totalDuration : (i + 1) * durationPerBlock;
-
-            srtLines.push(`${i + 1}`);
-            srtLines.push(`${this.formatSRTTime(startTime)} --> ${this.formatSRTTime(endTime)}`);
-            srtLines.push(cues[i]);
-            srtLines.push('');
-        }
-
-        fs.writeFileSync(outputPath, srtLines.join('\n'), 'utf8');
-        console.log(`✅ SRT 파일 생성 완료: ${outputPath} (${cues.length}개 cue)`);
-    }
-
-    /**
      * 초 단위 시간을 SRT 형식으로 변환
      */
     private formatSRTTime(seconds: number): string {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-        const milliseconds = Math.floor((seconds % 1) * 1000);
-
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+        return formatSRTTime(seconds);
     }
 
     /**
@@ -304,7 +250,7 @@ export class TTSService {
             charPos = Math.min(charEnd + 1, totalChars);
             if (!segmentText) continue;
 
-            const subCues = this.mergeShorCues(this.splitByCharLimit(segmentText, MAX_CHARS), MAX_CHARS);
+            const subCues = this.mergeShortCues(this.splitByCharLimit(segmentText, MAX_CHARS), MAX_CHARS);
             const segDuration = seg.end - seg.start;
             const subDur = segDuration / subCues.length;
 
@@ -347,7 +293,7 @@ export class TTSService {
             // 텍스트를 cue로 분할 후 SSML mark 삽입
             const MAX_CHARS = 22;
             const rawCues = this.splitIntoSentences(text).flatMap(s => this.splitByCharLimit(s, MAX_CHARS));
-            const cueTexts = this.mergeShorCues(rawCues, MAX_CHARS);
+            const cueTexts = this.mergeShortCues(rawCues, MAX_CHARS);
 
             const ssml = this.buildSSMLWithMarks(cueTexts);
             console.log(`📝 SSML with marks 생성 완료 (${cueTexts.length}개 cue)`);
@@ -402,43 +348,45 @@ export class TTSService {
             const duration = await this.getAudioDuration(outputPath);
             console.log(`⏱️ 오디오 길이: ${duration.toFixed(2)}초`);
 
-            // 자막 타이밍 생성: silencedetect → SSML marks → 균등 분배 순으로 시도
+            // 자막 타이밍 생성: SSML marks → silencedetect → 균등 분배 순으로 시도
             let cues: SubtitleCue[] | undefined;
             let srtPath: string | undefined;
 
-            // 1차: silencedetect 기반 의미 단위 분할
-            const silences = await this.detectSilences(outputPath);
-            if (silences.length >= 1) {
-                cues = this.buildCuesFromSilences(text, silences, duration);
-                if (cues.length === 0) cues = undefined; // 실패 시 fallback
+            // 1차: SSML mark timepoints (TTS API 응답에서 이미 수신, 추가 비용 없음)
+            const timepoints: Array<{ markName: string; timeSeconds: number }> =
+                (response as any).timepoints || [];
+
+            if (timepoints.length > 0 && timepoints.length === cueTexts.length) {
+                console.log(`✅ SSML timepoints 수신: ${timepoints.length}개`);
+                cues = cueTexts.map((t, i) => ({
+                    text: t,
+                    start: timepoints[i].timeSeconds,
+                    end: i < timepoints.length - 1 ? timepoints[i + 1].timeSeconds : duration,
+                }));
             }
 
-            // 2차: SSML mark timepoints
+            // 2차: silencedetect 기반 의미 단위 분할 (SSML 실패 시 fallback)
             if (!cues) {
-                const timepoints: Array<{ markName: string; timeSeconds: number }> =
-                    (response as any).timepoints || [];
-
-                if (timepoints.length > 0 && timepoints.length === cueTexts.length) {
-                    console.log(`✅ SSML timepoints 수신: ${timepoints.length}개`);
-                    cues = cueTexts.map((t, i) => ({
-                        text: t,
-                        start: timepoints[i].timeSeconds,
-                        end: i < timepoints.length - 1 ? timepoints[i + 1].timeSeconds : duration,
-                    }));
-                } else {
-                    // 3차: 균등 분배
-                    console.warn(`⚠️ timepoints 없음 (${timepoints.length}/${cueTexts.length}), 균등 분배 사용`);
-                    const dur = duration / cueTexts.length;
-                    cues = cueTexts.map((t, i) => ({
-                        text: t,
-                        start: i * dur,
-                        end: i === cueTexts.length - 1 ? duration : (i + 1) * dur,
-                    }));
+                const silences = await this.detectSilences(outputPath);
+                if (silences.length >= 1) {
+                    cues = this.buildCuesFromSilences(text, silences, duration);
+                    if (cues.length === 0) cues = undefined;
                 }
             }
 
+            // 3차: 균등 분배
+            if (!cues) {
+                console.warn(`⚠️ timepoints/silencedetect 실패, 균등 분배 사용`);
+                const dur = duration / cueTexts.length;
+                cues = cueTexts.map((t, i) => ({
+                    text: t,
+                    start: i * dur,
+                    end: i === cueTexts.length - 1 ? duration : (i + 1) * dur,
+                }));
+            }
+
             if (generateSRT && cues) {
-                srtPath = path.join(this.srtDir, `${filename}.srt`);
+                srtPath = path.join(this.outputDir, `${filename}.srt`);
                 const srtLines: string[] = [];
                 cues.forEach((cue, i) => {
                     srtLines.push(`${i + 1}`);
@@ -526,32 +474,15 @@ export class TTSService {
         }
     }
 
-    /**
-     * 오디오 파일 정보 가져오기
-     */
-    getAudioInfo(audioPath: string): { duration: number; size: number } {
-        try {
-            console.log(`📊 오디오 파일 정보 조회: ${audioPath}`);
+}
 
-            if (!fs.existsSync(audioPath)) {
-                console.error(`❌ 파일이 존재하지 않음: ${audioPath}`);
-                return { duration: 0, size: 0 };
-            }
-
-            const stats = fs.statSync(audioPath);
-            console.log(`📁 파일 크기: ${stats.size} bytes`);
-
-            // MP3 파일의 대략적인 재생 시간 추정 (1MB ≈ 1분)
-            const duration = Math.round((stats.size / 1024 / 1024) * 60);
-            console.log(`⏱️ 추정 재생 시간: ${duration}초`);
-
-            return {
-                duration,
-                size: stats.size
-            };
-        } catch (error) {
-            console.error('❌ 오디오 파일 정보 조회 실패:', error);
-            return { duration: 0, size: 0 };
-        }
-    }
-} 
+/**
+ * 초 단위 시간을 SRT 형식으로 변환 (HH:MM:SS,mmm)
+ */
+export function formatSRTTime(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const milliseconds = Math.floor((seconds % 1) * 1000);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+}

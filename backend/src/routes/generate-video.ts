@@ -3,6 +3,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
+import { formatSRTTime } from '../services/ttsService';
 
 const router = express.Router();
 const writeFile = promisify(fs.writeFile);
@@ -27,29 +28,6 @@ router.post('/', async (req: Request, res: Response) => {
             });
         }
 
-        // 스토리보드 데이터에서 나레이션 추출(로그용)
-        const storyboardScenes = scriptData?.storyboardResult?.scenes || scriptData?.storyboardImages?.images || [];
-        const narrations: Map<number, string> = new Map();
-
-        console.log('=== 나레이션 추출 시작 ===');
-        console.log('scriptData 구조:', {
-            hasStoryboardResult: !!scriptData?.storyboardResult,
-            hasStoryboardImages: !!scriptData?.storyboardImages,
-            scenesCount: storyboardScenes.length
-        });
-
-        storyboardScenes.forEach((scene: any, idx: number) => {
-            const sceneNum = scene.scene_number || scene.sceneNumber || (idx + 1);
-            const narrative = scene.narrative_korean || scene.narrative || scene.narrative_english || '';
-            if (sceneNum && narrative) {
-                narrations.set(sceneNum, narrative);
-                console.log(`나레이션 추가: 장면 ${sceneNum} = "${narrative.substring(0, 50)}..."`);
-            }
-        });
-
-        console.log(`총 ${narrations.size}개의 나레이션이 추출되었습니다.`);
-        console.log('=== 나레이션 추출 완료 ===\n');
-
         console.log('TTS 데이터:', {
             audioResultCount: ttsData.audioResult?.length || 0
         });
@@ -63,6 +41,16 @@ router.post('/', async (req: Request, res: Response) => {
         // temp-videos 디렉토리 생성
         if (!(await exists(tempDir))) {
             await mkdir(tempDir, { recursive: true });
+        }
+
+        // 출력 디렉토리 쓰기 권한 확인 (루프 외부에서 1회)
+        try {
+            const testFile = path.join(tempDir, `.test_write_${Date.now()}`);
+            await writeFile(testFile, 'test');
+            await fs.promises.unlink(testFile);
+            console.log(`✅ 출력 디렉토리 쓰기 권한 확인: ${tempDir}`);
+        } catch (error) {
+            throw new Error(`출력 디렉토리에 쓰기 권한이 없습니다: ${tempDir}`);
         }
 
         // 각 그룹별로 영상 생성
@@ -281,218 +269,174 @@ router.post('/', async (req: Request, res: Response) => {
             const videoId = `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const outputPath = path.join(tempDir, `${videoId}.mp4`);
 
-            // 출력 디렉토리 확인 및 생성
-            if (!(await exists(tempDir))) {
-                await mkdir(tempDir, { recursive: true });
-                console.log(`✅ 출력 디렉토리 생성: ${tempDir}`);
-            }
-
-            // 출력 디렉토리 쓰기 권한 확인
-            try {
-                const testFile = path.join(tempDir, `.test_write_${Date.now()}`);
-                await writeFile(testFile, 'test');
-                await fs.promises.unlink(testFile);
-                console.log(`✅ 출력 디렉토리 쓰기 권한 확인: ${tempDir}`);
-            } catch (error) {
-                console.error(`❌ 출력 디렉토리 쓰기 권한 없음: ${tempDir}`, error);
-                throw new Error(`출력 디렉토리에 쓰기 권한이 없습니다: ${tempDir}`);
-            }
-
             console.log(`📁 출력 파일 경로: ${outputPath}`);
 
             // FFmpeg로 영상 생성 (이미지 슬라이드쇼 + 오디오)
-            await new Promise<void>((resolve, reject) => {
-                console.log('FFmpeg 영상 생성 시작...');
+            console.log('FFmpeg 영상 생성 시작...');
 
-                // 오디오 파일의 실제 길이 확인 (ffprobe 사용)
-                const getAudioDuration = (audioPath: string): Promise<number> => {
-                    return new Promise((resolve, reject) => {
-                        ffmpeg.ffprobe(audioPath, (err, metadata) => {
-                            if (err) {
-                                console.warn(`⚠️ 오디오 길이 확인 실패, duration 값 사용: ${err.message}`);
-                                resolve(duration); // 실패 시 전달받은 duration 사용
-                            } else {
-                                const actualDuration = metadata.format?.duration || duration;
-                                console.log(`✅ 오디오 실제 길이: ${actualDuration.toFixed(2)}초 (전달받은 duration: ${duration}초)`);
-                                resolve(actualDuration);
-                            }
-                        });
-                    });
-                };
-
-                getAudioDuration(audioPath).then(async (actualAudioDuration) => {
-                    // 실제 오디오 길이에 맞춰 이미지 duration 재계산
-                    const adjustedImageDuration = parseFloat((actualAudioDuration / imagePaths.length).toFixed(2));
-                    console.log(`📊 이미지 duration 재계산: ${actualAudioDuration}초 / ${imagePaths.length}개 = ${adjustedImageDuration}초`);
-
-                    // 자막 타이밍을 실제 오디오 길이 기준으로 비율 스케일링
-                    // (균등 재분배 X → SSML mark의 상대적 타이밍 보존)
-                    if (imageNarrations.length > 0 && duration > 0 && Math.abs(actualAudioDuration - duration) > 0.05) {
-                        const scale = actualAudioDuration / duration;
-                        console.log(`\n🔧 자막 타이밍 스케일: x${scale.toFixed(4)} (${duration}s → ${actualAudioDuration.toFixed(2)}s)`);
-                        imageNarrations.forEach(n => {
-                            n.start = n.start * scale;
-                            n.end = n.end * scale;
-                        });
-                        // 마지막 cue end를 실제 오디오 길이로 고정
-                        imageNarrations[imageNarrations.length - 1].end = actualAudioDuration;
+            // 오디오 파일의 실제 길이 확인 (ffprobe 사용)
+            const actualAudioDuration = await new Promise<number>((resolve) => {
+                ffmpeg.ffprobe(audioPath, (err, metadata) => {
+                    if (err) {
+                        console.warn(`⚠️ 오디오 길이 확인 실패, duration 값 사용: ${err.message}`);
+                        resolve(duration);
+                    } else {
+                        const actual = metadata.format?.duration || duration;
+                        console.log(`✅ 오디오 실제 길이: ${actual.toFixed(2)}초 (전달받은 duration: ${duration}초)`);
+                        resolve(actual);
                     }
+                });
+            });
 
-                    // FFmpeg concat 파일 생성 (마지막 이미지에도 duration 명시)
-                    const concatFilePath = path.join(tempDir, `concat_${videoId}.txt`);
-                    const concatLines = imagePaths.map((imgPath, index) => {
-                        // 마지막 이미지도 duration 명시하여 정확한 길이 보장
-                        return `file '${imgPath.replace(/'/g, "\\'")}'\nduration ${adjustedImageDuration}`;
-                    }).join('\n') + `\nfile '${imagePaths[imagePaths.length - 1].replace(/'/g, "\\'")}'`;
+            // 실제 오디오 길이에 맞춰 이미지 duration 재계산
+            const adjustedImageDuration = parseFloat((actualAudioDuration / imagePaths.length).toFixed(2));
+            console.log(`📊 이미지 duration 재계산: ${actualAudioDuration}초 / ${imagePaths.length}개 = ${adjustedImageDuration}초`);
 
-                    writeFile(concatFilePath, concatLines).then(async () => {
-                        // 자막 필터 생성 (SRT + libass 자동 래핑)
-                        // fps=25 를 scale 앞에 삽입:
-                        // concat demuxer는 이미지 1장당 프레임 1개만 생성하므로
-                        // subtitle 필터가 항상 PTS=0만 보게 됨 → 자막이 첫 번째 cue에 고정됨
-                        // fps=25 로 먼저 프레임을 복제하면 PTS가 정상적으로 진행되어 자막이 교체됨
-                        let videoFilter =
-                            "setpts=PTS-STARTPTS," +
-                            "fps=25," +
-                            "scale=1080:1920:force_original_aspect_ratio=decrease," +
-                            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+            // 자막 타이밍을 실제 오디오 길이 기준으로 비율 스케일링
+            // (균등 재분배 X → SSML mark의 상대적 타이밍 보존)
+            if (imageNarrations.length > 0 && duration > 0 && Math.abs(actualAudioDuration - duration) > 0.05) {
+                const scale = actualAudioDuration / duration;
+                console.log(`\n🔧 자막 타이밍 스케일: x${scale.toFixed(4)} (${duration}s → ${actualAudioDuration.toFixed(2)}s)`);
+                imageNarrations.forEach(n => {
+                    n.start = n.start * scale;
+                    n.end = n.end * scale;
+                });
+                // 마지막 cue end를 실제 오디오 길이로 고정
+                imageNarrations[imageNarrations.length - 1].end = actualAudioDuration;
+            }
 
-                        // 자막을 음성보다 약간 앞서 표시 (자막이 늦게 나오는 현상 보정)
-                        const SUBTITLE_OFFSET_SEC = 0.9;
+            // FFmpeg concat 파일 생성 (마지막 이미지에도 duration 명시)
+            const concatFilePath = path.join(tempDir, `concat_${videoId}.txt`);
+            const concatLines = imagePaths.map((imgPath) =>
+                `file '${imgPath.replace(/'/g, "\\'")}'\nduration ${adjustedImageDuration}`
+            ).join('\n') + `\nfile '${imagePaths[imagePaths.length - 1].replace(/'/g, "\\'")}'`;
 
-                        // SRT 항상 imageNarrations 기준으로 생성 (offset 적용 가능하도록)
-                        // ttsSrtPath가 있어도 무시하고 imageNarrations 사용
-                        let finalSrtPath: string | null = null;
+            await writeFile(concatFilePath, concatLines);
 
-                        if (imageNarrations.length > 0) {
-                            finalSrtPath = path.join(tempDir, `subtitle_${videoId}.srt`);
-                            const srtLines: string[] = [];
+            // 자막 필터 생성 (SRT + libass 자동 래핑)
+            // fps=25 를 scale 앞에 삽입:
+            // concat demuxer는 이미지 1장당 프레임 1개만 생성하므로
+            // subtitle 필터가 항상 PTS=0만 보게 됨 → 자막이 첫 번째 cue에 고정됨
+            // fps=25 로 먼저 프레임을 복제하면 PTS가 정상적으로 진행되어 자막이 교체됨
+            let videoFilter =
+                "setpts=PTS-STARTPTS," +
+                "fps=25," +
+                "scale=1080:1920:force_original_aspect_ratio=decrease," +
+                "pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
 
-                            for (let idx = 0; idx < imageNarrations.length; idx++) {
-                                const narration = imageNarrations[idx];
-                                const start = Math.max(0, narration.start - SUBTITLE_OFFSET_SEC);
-                                const end   = Math.max(start + 0.1, narration.end - SUBTITLE_OFFSET_SEC);
+            // 자막을 음성보다 약간 앞서 표시 (자막이 늦게 나오는 현상 보정)
+            const SUBTITLE_OFFSET_SEC = 0.9;
 
-                                // 긴 자막은 더 작은 폰트로 표시 (ASS inline override tag)
-                                const fontTag = narration.text.length > 28 ? '{\\fs8}' : narration.text.length > 22 ? '{\\fs9}' : '';
+            let finalSrtPath: string | null = null;
 
-                                srtLines.push(`${idx + 1}`);
-                                srtLines.push(`${formatSRTTime(start)} --> ${formatSRTTime(end)}`);
-                                srtLines.push(fontTag + narration.text);
-                                srtLines.push('');
+            if (imageNarrations.length > 0) {
+                finalSrtPath = path.join(tempDir, `subtitle_${videoId}.srt`);
+                const srtLines: string[] = [];
 
-                                console.log(`  📝 cue ${idx + 1}: ${start.toFixed(2)}s→${end.toFixed(2)}s "${narration.text.substring(0, 40)}"`);
-                            }
+                for (let idx = 0; idx < imageNarrations.length; idx++) {
+                    const narration = imageNarrations[idx];
+                    const start = Math.max(0, narration.start - SUBTITLE_OFFSET_SEC);
+                    const end   = Math.max(start + 0.1, narration.end - SUBTITLE_OFFSET_SEC);
 
-                            await writeFile(finalSrtPath, srtLines.join('\n'), 'utf8');
-                            console.log(`✅ SRT 생성 완료 (offset -${SUBTITLE_OFFSET_SEC}s 적용): ${finalSrtPath}`);
+                    // 긴 자막은 더 작은 폰트로 표시 (ASS inline override tag)
+                    const fontTag = narration.text.length > 28 ? '{\\fs8}' : narration.text.length > 22 ? '{\\fs9}' : '';
+
+                    srtLines.push(`${idx + 1}`);
+                    srtLines.push(`${formatSRTTime(start)} --> ${formatSRTTime(end)}`);
+                    srtLines.push(fontTag + narration.text);
+                    srtLines.push('');
+
+                    console.log(`  📝 cue ${idx + 1}: ${start.toFixed(2)}s→${end.toFixed(2)}s "${narration.text.substring(0, 40)}"`);
+                }
+
+                await writeFile(finalSrtPath, srtLines.join('\n'), 'utf8');
+                console.log(`✅ SRT 생성 완료 (offset -${SUBTITLE_OFFSET_SEC}s 적용): ${finalSrtPath}`);
+            }
+
+            // 최종 SRT 파일 검증 및 적용
+            if (finalSrtPath && (await exists(finalSrtPath))) {
+                const verifyContent = await readFile(finalSrtPath, 'utf8');
+                console.log(`\n🔍 최종 SRT 파일 검증:`);
+                console.log(`   파일 경로: ${finalSrtPath}`);
+                console.log(`   파일 크기: ${verifyContent.length} 바이트`);
+                console.log(`   첫 200자: "${verifyContent.substring(0, 200)}"`);
+
+                // FFmpeg subtitles 필터 경로 이스케이프
+                // 1) Windows 백슬래시 → 슬래시  2) 콜론(:) → \:  3) 작은따옴표 → \'
+                let escapedSrtPath = finalSrtPath
+                    .replace(/\\/g, '/')
+                    .replace(/:/g, '\\:')
+                    .replace(/'/g, "\\'");
+
+                const quotedSrtPath = `'${escapedSrtPath}'`;
+
+                // libass 스타일: 하단 중앙, 여백/외곽선/배경
+                // force_style 값 내부의 쉼표는 필터 구분자이므로 \, 로 이스케이프 필수
+                const styleParts = [
+                    'Alignment=2',              // 하단 중앙
+                    'MarginV=60',               // 하단 여백
+                    'MarginL=40',               // 좌측 여백 (텍스트 잘림 방지)
+                    'MarginR=40',               // 우측 여백 (텍스트 잘림 방지)
+                    'FontSize=11',              // libass PlayResY=288 기준 → 실제 1920px에서 ~73px
+                    'BorderStyle=3',            // 배경 박스 스타일
+                    'Outline=1',                // 외곽선 두께
+                    'Shadow=0',
+                    'PrimaryColour=&H00FFFFFF', // 불투명 흰색
+                    'BackColour=&H99000000'     // 60% 투명 검정 배경
+                ];
+                const style = styleParts.join('\\,');
+
+                videoFilter += `,subtitles=${quotedSrtPath}:charenc=UTF-8:force_style='${style}'`;
+                console.log(`\n✅ subtitles 필터 적용 (이스케이프된 경로: ${escapedSrtPath})`);
+            } else {
+                console.warn('⚠️ 표시할 자막 파일이 없어 자막 없이 생성합니다.');
+            }
+
+            console.log('=== FFmpeg 비디오 필터 ===');
+            console.log(videoFilter);
+
+            // FFmpeg outputOptions 준비
+            const outputOpts: string[] = [
+                "-pix_fmt", "yuv420p",
+                "-r", "30",
+                "-t", actualAudioDuration.toFixed(2),
+                "-map", "0:v",
+                "-map", "1:a",
+                "-vf", videoFilter,
+            ];
+
+            // FFmpeg 실행
+            await new Promise<void>((resolve, reject) => {
+                ffmpeg(concatFilePath)
+                    .inputOptions(['-f', 'concat', '-safe', '0'])
+                    .input(audioPath)
+                    .videoCodec('libx264')
+                    .audioCodec('aac')
+                    .outputOptions(outputOpts)
+                    .output(outputPath)
+                    .on('start', (commandLine) => {
+                        console.log('=== FFmpeg 명령어 전체 ===');
+                        console.log(commandLine);
+                        console.log('=== FFmpeg 명령어 끝 ===');
+                    })
+                    .on('stderr', line => console.log('ffmpeg:', line))
+                    .addOption('-v', 'debug')
+                    .on('progress', (progress) => {
+                        if (progress.percent) {
+                            console.log('진행률:', Math.round(progress.percent) + '%');
                         }
-
-                        // 최종 SRT 파일 검증 및 적용
-                        if (finalSrtPath && (await exists(finalSrtPath))) {
-                            const verifyContent = await readFile(finalSrtPath, 'utf8');
-                            console.log(`\n🔍 최종 SRT 파일 검증:`);
-                            console.log(`   파일 경로: ${finalSrtPath}`);
-                            console.log(`   파일 존재: ✅`);
-                            console.log(`   파일 크기: ${verifyContent.length} 바이트`);
-                            console.log(`   첫 200자: "${verifyContent.substring(0, 200)}"`);
-                            console.log(`   ${ttsSrtPath ? '📌 TTS에서 생성한 SRT 파일 사용' : '📝 새로 생성한 SRT 파일 사용'}`);
-
-                            // FFmpeg subtitles 필터 경로 이스케이프 (문서 _escape_path 패턴)
-                            // 1) Windows 백슬래시 → 슬래시
-                            // 2) 콜론(:) → \:  (드라이브 문자 등)
-                            // 3) 작은따옴표 → \'
-                            let escapedSrtPath = finalSrtPath
-                                .replace(/\\/g, '/')
-                                .replace(/:/g, '\\:')
-                                .replace(/'/g, "\\'");
-
-                            // 작은따옴표로 경로 감싸기 (FFmpeg 필터 문법)
-                            const quotedSrtPath = `'${escapedSrtPath}'`;
-
-                            // libass 스타일: 하단 중앙, 여백/외곽선/배경
-                            // force_style 값 내부의 쉼표는 필터 구분자이므로 \, 로 이스케이프 필수
-                            // 색상 코드는 ASS 형식 그대로 사용: &HAABBGGRR (백슬래시 불필요)
-                            const styleParts = [
-                                'Alignment=2',              // 하단 중앙
-                                'MarginV=60',               // 하단 여백
-                                'MarginL=40',               // 좌측 여백 (텍스트 잘림 방지)
-                                'MarginR=40',               // 우측 여백 (텍스트 잘림 방지)
-                                'FontSize=11',              // libass PlayResY=288 기준 → 실제 1920px에서 ~73px
-                                'BorderStyle=3',            // 배경 박스 스타일
-                                'Outline=1',                // 외곽선 두께
-                                'Shadow=0',
-                                'PrimaryColour=&H00FFFFFF', // 불투명 흰색
-                                'BackColour=&H99000000'     // 60% 투명 검정 배경
-                            ];
-                            // 쉼표를 \, 로 이스케이프 (JS 문자열: '\\,' → FFmpeg 수신: \,)
-                            const style = styleParts.join('\\,');
-
-                            // subtitles 필터: force_style 값도 작은따옴표로 감싸기
-                            videoFilter += `,subtitles=${quotedSrtPath}:charenc=UTF-8:force_style='${style}'`;
-                            console.log(`\n✅ subtitles 필터 적용 (자동 래핑)`);
-                            console.log(`   SRT 파일 경로: ${finalSrtPath}`);
-                            console.log(`   이스케이프된 경로: ${escapedSrtPath}`);
-                            console.log(`   전체 videoFilter: ${videoFilter}`);
-                        } else {
-                            console.warn('⚠️ 표시할 자막 파일이 없어 자막 없이 생성합니다.');
-                        }
-
-                        console.log('=== FFmpeg 비디오 필터 ===');
-                        console.log(videoFilter);
-
-                        // FFmpeg outputOptions 준비
-                        const outputOpts: string[] = [
-                            "-pix_fmt", "yuv420p",
-                            "-r", "30",
-                            "-t", actualAudioDuration.toFixed(2),
-                            "-map", "0:v", // 비디오 스트림 매핑 (첫 번째 입력의 비디오)
-                            "-map", "1:a", // 오디오 스트림 매핑 (두 번째 입력의 오디오)
-                        ];
-
-                        // 비디오 필터 적용 (자막 포함)
-                        if (videoFilter && videoFilter.trim()) {
-                            outputOpts.push("-vf");
-                            outputOpts.push(videoFilter);
-                            console.log(`✅ 비디오 필터 적용: ${videoFilter}`);
-                            console.log(`📝 필터 길이: ${videoFilter.length}자`);
-                        }
-
-                        // FFmpeg 명령 구성
-                        const command = ffmpeg(concatFilePath)
-                            .inputOptions(['-f', 'concat', '-safe', '0'])
-                            .input(audioPath)
-                            .videoCodec('libx264')
-                            .audioCodec('aac')
-                            .outputOptions(outputOpts)
-                            .output(outputPath)
-                            .on('start', (commandLine) => {
-                                console.log('=== FFmpeg 명령어 전체 ===');
-                                console.log(commandLine);
-                                console.log('=== FFmpeg 명령어 끝 ===');
-                            })
-                            .on('stderr', line => console.log('ffmpeg:', line))
-                            .addOption('-v', 'debug') // 자세한 로그
-                            .on('progress', (progress) => {
-                                if (progress.percent) {
-                                    console.log('진행률:', Math.round(progress.percent) + '%');
-                                }
-                            })
-                            .on('end', () => {
-                                console.log('✅ 영상 생성 완료:', outputPath);
-                                // concat 파일 정리
-                                fs.unlink(concatFilePath, () => { });
-                                resolve();
-                            })
-                            .on('error', (err) => {
-                                console.error('❌ FFmpeg 오류:', err);
-                                // concat 파일 정리
-                                fs.unlink(concatFilePath, () => { });
-                                reject(err);
-                            })
-                            .run();
-                    }).catch(reject);
-                }).catch(reject);
+                    })
+                    .on('end', () => {
+                        console.log('✅ 영상 생성 완료:', outputPath);
+                        fs.unlink(concatFilePath, () => { });
+                        resolve();
+                    })
+                    .on('error', (err) => {
+                        console.error('❌ FFmpeg 오류:', err);
+                        fs.unlink(concatFilePath, () => { });
+                        reject(err);
+                    })
+                    .run();
             });
 
             // 생성된 영상의 상대 경로
@@ -558,20 +502,6 @@ async function downloadImage(url: string, outputDir: string, imageId: string): P
 
     await writeFile(filePath, buffer);
     return filePath;
-}
-
-/**
- * 초 단위 시간을 SRT 형식으로 변환
- * @param seconds 초 단위 시간 (예: 12.345)
- * @returns SRT 형식 시간 문자열 (예: "00:00:12,345")
- */
-function formatSRTTime(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds % 1) * 1000);
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
 }
 
 export default router;
