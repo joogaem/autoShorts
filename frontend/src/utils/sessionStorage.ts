@@ -163,7 +163,9 @@ export const setTTSData = (data: TTSData) => {
             script: item.script,
             audioUrl: item.audioUrl,
             duration: item.duration,
-            // allAudioFiles는 제외하거나 URL만 저장
+            srtPath: item.srtPath,
+            srtUrl: item.srtUrl,
+            cues: item.cues, // SSML mark 기반 정확한 자막 타이밍
             allAudioFiles: item.allAudioFiles?.map((file: any) => ({
                 filename: file.filename,
                 duration: file.duration

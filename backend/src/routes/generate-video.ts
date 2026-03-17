@@ -3,9 +3,6 @@ import ffmpeg from 'fluent-ffmpeg';
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
-import { execSync } from 'child_process';
-// FFmpeg 경로 자동 설정
-import '../config/ffmpeg';
 
 const router = express.Router();
 const writeFile = promisify(fs.writeFile);
@@ -61,23 +58,17 @@ router.post('/', async (req: Request, res: Response) => {
         });
 
         const videos = [];
-        // Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
-        const tempDir = process.platform === 'win32' 
-            ? 'C:\\ffmpeg' 
-            : path.join(process.cwd(), 'temp-videos');
+        const tempDir = path.join(process.cwd(), 'temp-videos');
 
         // temp-videos 디렉토리 생성
         if (!(await exists(tempDir))) {
             await mkdir(tempDir, { recursive: true });
         }
 
-        // 이미지와 오디오를 1:1로 매칭하여 각 쌍을 개별 비디오로 생성
-        const videoSegments: string[] = []; // 개별 비디오 파일 경로들
-
-        // 각 그룹별로 처리
+        // 각 그룹별로 영상 생성
         for (const audioItem of ttsData.audioResult || []) {
-            const { group, script, audioUrl, duration, srtPath, srtUrl } = audioItem;
-            console.log(`\n=== 그룹 "${group.title}" 처리 시작 ===`);
+            const { group, script, audioUrl, duration, srtPath, srtUrl, cues: ttsCues } = audioItem;
+            console.log(`\n=== 그룹 "${group.title}" 영상 생성 시작 ===`);
 
             // TTS에서 생성한 SRT 파일 경로 확인
             console.log('📝 TTS SRT 정보:', { srtPath, srtUrl });
@@ -99,15 +90,6 @@ router.post('/', async (req: Request, res: Response) => {
             }
 
             console.log(`이미지 ${images.length}개 발견, 오디오 길이: ${duration}초`);
-            
-            // 오디오 파일을 여러 개로 분할하거나, 이미지와 1:1 매칭
-            // 여기서는 이미지와 오디오를 1:1로 매칭한다고 가정
-            // 만약 오디오가 1개이고 이미지가 여러 개라면, 오디오를 분할해야 함
-            // 하지만 사용자가 "오디오 파일 여러개"라고 했으므로, 각 이미지에 대응하는 오디오가 있다고 가정
-            
-            // 일단 현재 구조에서는 이미지 여러 개 + 오디오 1개이므로
-            // 오디오를 이미지 개수만큼 분할하거나, 각 이미지에 동일한 오디오를 사용
-            // 사용자 요구사항에 맞춰 각 이미지+오디오 쌍을 개별 비디오로 생성
 
             // 오디오 파일 경로
             let audioPath: string;
@@ -144,39 +126,8 @@ router.post('/', async (req: Request, res: Response) => {
                     // URL인 경우 다운로드
                     imagePath = await downloadImage(imageUrl, tempDir, image.id || `img_${Date.now()}`);
                 } else {
-                    // 로컬 경로: /temp-images/로 시작하는 경우 C:\ffmpeg에서 직접 찾기
-                    if (imageUrl.startsWith('/temp-images/')) {
-                        const filename = path.basename(imageUrl);
-                        // Windows에서 한글 경로 문제 해결: C:\ffmpeg 사용
-                        if (process.platform === 'win32') {
-                            imagePath = path.join('C:\\ffmpeg', filename);
-                        } else {
-                            imagePath = path.join(process.cwd(), 'temp-images', filename);
-                        }
-                        console.log(`📁 이미지 경로 변환: ${imageUrl} -> ${imagePath}`);
-                    } else {
-                        // 다른 로컬 경로: 한글 경로 문제 해결을 위해 C:\ffmpeg로 복사
-                        const originalPath = path.join(process.cwd(), imageUrl.replace(/^\//, ''));
-                        if (await exists(originalPath)) {
-                            // Windows에서만 C:\ffmpeg로 복사
-                            if (process.platform === 'win32') {
-                                const filename = path.basename(originalPath);
-                                imagePath = path.join(tempDir, filename);
-                                // 파일이 이미 존재하지 않으면 복사
-                                if (!(await exists(imagePath))) {
-                                    const originalContent = await readFile(originalPath);
-                                    await writeFile(imagePath, originalContent);
-                                    console.log(`📁 이미지 파일 복사: ${originalPath} -> ${imagePath}`);
-                                } else {
-                                    console.log(`📁 이미지 파일 이미 존재: ${imagePath}`);
-                                }
-                            } else {
-                                imagePath = originalPath;
-                            }
-                        } else {
-                            imagePath = originalPath;
-                        }
-                    }
+                    // 로컬 경로
+                    imagePath = path.join(process.cwd(), imageUrl.replace(/^\//, ''));
                 }
 
                 if (await exists(imagePath)) {
@@ -192,9 +143,8 @@ router.post('/', async (req: Request, res: Response) => {
 
             console.log(`유효한 이미지 ${imagePaths.length}개 준비 완료`);
 
-            // 이미지와 오디오를 1:1로 매칭하여 각 쌍을 개별 비디오로 생성
-            // 오디오를 이미지 개수만큼 분할 (각 이미지당 오디오 길이 / 이미지 개수)
-            // segmentDuration은 나중에 actualAudioDuration을 사용하여 재계산됨
+            // 각 이미지당 표시 시간 계산 (오디오 길이를 이미지 개수로 나눔)
+            const imageDuration = parseFloat((duration / imagePaths.length).toFixed(2));
 
             // 프론트 페이지에 표시되는 자막 스크립트 가져오기 (프론트와 동일한 로직)
             console.log(`\n=== 자막 스크립트 가져오기 (그룹: ${group.title}) ===`);
@@ -272,283 +222,277 @@ router.post('/', async (req: Request, res: Response) => {
                 }
             }
 
-            // === (1번 방식) 문장 단위 자막 큐 생성 (자동 래핑: subtitles 필터에 맡김) ===
-            // TTS에서 생성한 SRT가 있으면 그것을 사용, 없으면 새로 생성
+            // === 자막 결정 ===
+            // 우선순위 1: TTS에서 생성한 SRT 파일 (SSML mark 기반, 가장 정확)
+            // 우선순위 2: ttsCues → imageNarrations → 새 SRT 생성
+            // 우선순위 3: fullScriptText 균등 분배 (fallback)
             const imageNarrations: Array<{ start: number; end: number; text: string }> = [];
 
-            // TTS SRT 파일이 있으면 직접 사용
-            if (ttsSrtPath) {
-                console.log(`\n=== TTS에서 생성한 SRT 파일 사용 ===`);
-                console.log(`SRT 파일 경로: ${ttsSrtPath}`);
-                // SRT 파일을 읽어서 검증만 하고, FFmpeg에서 직접 사용
-                try {
-                    const srtContent = await readFile(ttsSrtPath, 'utf8');
-                    console.log(`✅ TTS SRT 파일 읽기 완료 (${srtContent.length}자)`);
-                    console.log(`📄 SRT 파일 내용 미리보기 (처음 200자):`);
-                    console.log(srtContent.substring(0, 200));
-                } catch (error) {
-                    console.error(`❌ TTS SRT 파일 읽기 실패: ${error}`);
-                    ttsSrtPath = null; // 실패 시 새로 생성
+            if (ttsCues && ttsCues.length > 0) {
+                // SSML mark 기반 정확한 타이밍 사용
+                console.log(`\n=== TTS cues 사용 (SSML mark 기반, ${ttsCues.length}개) ===`);
+                for (const cue of ttsCues) {
+                    imageNarrations.push(cue);
+                    console.log(`  cue: ${cue.start.toFixed(2)}s→${cue.end.toFixed(2)}s "${cue.text}"`);
                 }
-            }
-
-            // TTS SRT가 없으면 기존 방식대로 생성
-            if (!ttsSrtPath && fullScriptText) {
-                console.log(`\n=== 자막 큐 생성 (문장 단위, 자동 래핑) ===`);
-
-                // 인라인 문장 분해 + 짧은 문장 합치기
+            } else if (fullScriptText) {
+                // fallback: fullScriptText에서 균등 분배
+                console.log(`\n=== 자막 큐 생성 (fallback 균등 분배) ===`);
+                const MAX_CHARS_PER_CUE = 22;
+                const MIN_CHARS_PER_CUE = 10;
                 const normalized = fullScriptText.replace(/\s+/g, ' ').trim();
-                // 마침표/느낌표/물음표 뒤 공백 기준 분리 (숫자 소수점 등은 제외 시도)
-                let cues: string[] = normalized
-                    .split(/(?<=[\.!?])(?!\d)\s+/g)
-                    .map(s => s.trim())
-                    .filter(Boolean);
-
-                // 최소 글자수 미달 cue는 이웃과 병합 (너무 짧은 표시 시간 방지)
-                const minCharsPerCue = 18;
+                const sentences: string[] = normalized
+                    .split(/(?<=[\.!?\uFF01\uFF1F\u3002])\s*/g)
+                    .map(s => s.trim()).filter(Boolean);
+                const splitByLen = (t: string): string[] => {
+                    if (t.length <= MAX_CHARS_PER_CUE) return [t];
+                    const words = t.split(' '); const chunks: string[] = []; let cur = '';
+                    for (const w of words) {
+                        const next = cur ? `${cur} ${w}` : w;
+                        if (next.length > MAX_CHARS_PER_CUE && cur) { chunks.push(cur); cur = w; }
+                        else cur = next;
+                    }
+                    if (cur) chunks.push(cur);
+                    return chunks.length ? chunks : [t];
+                };
+                let cues = sentences.flatMap(splitByLen);
                 const merged: string[] = [];
                 for (const s of cues) {
-                    if (merged.length === 0) {
-                        merged.push(s);
-                        continue;
-                    }
+                    if (!merged.length) { merged.push(s); continue; }
                     const last = merged[merged.length - 1];
-                    if (last.length < minCharsPerCue) {
+                    if (s.length < MIN_CHARS_PER_CUE && last.length + s.length + 1 <= MAX_CHARS_PER_CUE + 6)
                         merged[merged.length - 1] = `${last} ${s}`.trim();
-                    } else {
-                        merged.push(s);
-                    }
-                }
-                if (merged.length >= 2 && merged[merged.length - 1].length < minCharsPerCue) {
-                    const tail = merged.pop()!;
-                    merged[merged.length - 1] = `${merged[merged.length - 1]} ${tail}`.trim();
+                    else merged.push(s);
                 }
                 cues = merged;
-
-                const blockCount = Math.max(1, cues.length);
-                const subtitleDuration = duration / blockCount;
-
-                console.log(`총 cue: ${blockCount}개, cue당 평균: ${subtitleDuration.toFixed(3)}초`);
-
-                for (let i = 0; i < cues.length; i++) {
-                    const start = i * subtitleDuration;
-                    const end = (i === cues.length - 1) ? duration : start + subtitleDuration;
-
-                    imageNarrations.push({
-                        start,
-                        end,
-                        text: cues[i] // 줄바꿈 없이 한 큐당 한 문장(또는 합쳐진 문장)
-                    });
-
-                    console.log(`  📝 cue ${i + 1}: ${start.toFixed(3)}s → ${end.toFixed(3)}s / "${cues[i].slice(0, 60)}${cues[i].length > 60 ? '...' : ''}"`);
-                }
+                const dur = duration / Math.max(1, cues.length);
+                cues.forEach((text, i) => {
+                    imageNarrations.push({ text, start: i * dur, end: i === cues.length - 1 ? duration : (i + 1) * dur });
+                });
+                console.log(`  ${cues.length}개 cue 생성 (균등 분배)`);
             }
 
+            if (ttsSrtPath) {
+                console.log(`\n=== TTS SRT 파일 사용 (SSML mark 타이밍): ${ttsSrtPath} ===`);
+            }
             console.log('=== 자막 매칭 완료 ===\n');
 
-            // TTS 시간에 맞춰서 장면 하나의 이미지를 유지하여 비디오 생성
-            console.log(`\n=== 장면 비디오 생성 시작 ===`);
-            console.log(`이미지 ${imagePaths.length}개 중 첫 번째 이미지 사용, 오디오 1개 (${duration}초)`);
-            
-            // 오디오 실제 길이 확인
-            const getAudioDuration = (audioPath: string): Promise<number> => {
-                return new Promise((resolve, reject) => {
-                    ffmpeg.ffprobe(audioPath, (err, metadata) => {
-                        if (err) {
-                            console.warn(`⚠️ 오디오 길이 확인 실패, duration 값 사용: ${err.message}`);
-                            resolve(duration);
-                        } else {
-                            const actualDuration = metadata.format?.duration || duration;
-                            console.log(`✅ 오디오 실제 길이: ${actualDuration.toFixed(2)}초`);
-                            resolve(actualDuration);
-                        }
-                    });
-                });
-            };
-
-            const actualAudioDuration = await getAudioDuration(audioPath);
-            
-            // 첫 번째 이미지를 사용하여 전체 TTS 시간 동안 유지
-            const imagePath = imagePaths[0]; // 첫 번째 이미지 사용
-            console.log(`📊 장면 이미지: ${path.basename(imagePath)}`);
-            console.log(`📊 장면 길이: ${actualAudioDuration.toFixed(2)}초 (TTS 시간에 맞춤)`);
-            
+            // 영상 파일 경로
             const videoId = `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            // Windows 경로 정규화: 절대 경로로 변환
-            const outputPath = path.resolve(path.join(tempDir, `${videoId}.mp4`));
+            const outputPath = path.join(tempDir, `${videoId}.mp4`);
 
             // 출력 디렉토리 확인 및 생성
             if (!(await exists(tempDir))) {
                 await mkdir(tempDir, { recursive: true });
                 console.log(`✅ 출력 디렉토리 생성: ${tempDir}`);
             }
-            
-            // 출력 경로 디버깅
-            console.log(`📁 출력 경로: ${outputPath}`);
-            console.log(`📁 출력 디렉토리 존재 여부: ${await exists(path.dirname(outputPath))}`);
 
-            // 자막 파일 처리 (최대 2줄로 재구성)
-            let finalSrtPath: string | null = null;
-            
-            if (ttsSrtPath) {
-                // TTS에서 생성한 SRT 파일이 있는 경우
-                console.log(`\n=== 자막 파일 재구성 (최대 2줄) ===`);
-                const reformattedSrtPath = path.join(tempDir, `reformatted_${videoId}.srt`);
-                await reformatSRTForTwoLines(ttsSrtPath, actualAudioDuration, reformattedSrtPath);
-                finalSrtPath = reformattedSrtPath;
-            } else if (fullScriptText) {
-                // SRT 파일이 없고 스크립트 텍스트가 있는 경우
-                console.log(`\n=== 자막 파일 생성 (최대 2줄) ===`);
-                const generatedSrtPath = path.join(tempDir, `generated_${videoId}.srt`);
-                
-                // 텍스트를 최대 2줄로 분할
-                const twoLineTexts = splitTextIntoTwoLines(fullScriptText);
-                const lineCount = twoLineTexts.length;
-                const durationPerSubtitle = actualAudioDuration / lineCount;
-                
-                console.log(`📝 자막 줄 수 계산: ${lineCount}개 (각 최대 2줄)`);
-                console.log(`⏱️ 영상 총 길이: ${actualAudioDuration.toFixed(2)}초`);
-                console.log(`📊 자막당 평균 시간: ${durationPerSubtitle.toFixed(2)}초`);
-                
-                // SRT 파일 생성
-                let srtContent = '';
-                for (let i = 0; i < twoLineTexts.length; i++) {
-                    const startTime = i * durationPerSubtitle;
-                    const endTime = (i === twoLineTexts.length - 1) ? actualAudioDuration : (i + 1) * durationPerSubtitle;
-                    
-                    srtContent += `${i + 1}\n`;
-                    srtContent += `${formatSRTTime(startTime)} --> ${formatSRTTime(endTime)}\n`;
-                    srtContent += `${twoLineTexts[i]}\n\n`;
-                }
-                
-                await writeFile(generatedSrtPath, srtContent, 'utf8');
-                finalSrtPath = generatedSrtPath;
-                console.log(`✅ 생성된 SRT 파일 저장: ${generatedSrtPath}`);
+            // 출력 디렉토리 쓰기 권한 확인
+            try {
+                const testFile = path.join(tempDir, `.test_write_${Date.now()}`);
+                await writeFile(testFile, 'test');
+                await fs.promises.unlink(testFile);
+                console.log(`✅ 출력 디렉토리 쓰기 권한 확인: ${tempDir}`);
+            } catch (error) {
+                console.error(`❌ 출력 디렉토리 쓰기 권한 없음: ${tempDir}`, error);
+                throw new Error(`출력 디렉토리에 쓰기 권한이 없습니다: ${tempDir}`);
             }
 
-            // 비디오 필터 구성 (자막 포함)
-            const videoFilters: string[] = [
-                'scale=1080:1920:force_original_aspect_ratio=decrease',
-                'pad=1080:1920:(ow-iw)/2:(oh-ih)/2'
-            ];
+            console.log(`📁 출력 파일 경로: ${outputPath}`);
 
-            // 자막 필터 추가 (화면 하단 20% 위치)
-            if (finalSrtPath) {
-                try {
-                    // Windows 경로 처리: 절대 경로로 변환
-                    const absoluteSrtPath = path.resolve(finalSrtPath);
-                    
-                    // 파일 존재 확인
-                    if (!(await exists(absoluteSrtPath))) {
-                        console.warn(`⚠️ 자막 파일이 존재하지 않음: ${absoluteSrtPath}`);
-                    } else {
-                        // Windows에서 FFmpeg는 슬래시를 인식하므로 백슬래시를 슬래시로 변환
-                        let normalizedSrtPath = absoluteSrtPath.replace(/\\/g, '/');
-                        
-                        // 작은따옴표 이스케이프 (경로에 작은따옴표가 있을 경우)
-                        normalizedSrtPath = normalizedSrtPath.replace(/'/g, "\\'");
-                        
-                        // force_style 문자열
-                        const styleString = 'Alignment=2,MarginV=200,FontSize=44,Outline=2,Shadow=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000';
-                        
-                        // subtitles 필터 구성
-                        // Windows에서는 경로를 작은따옴표로 감싸고, force_style은 따옴표 없이
-                        const subtitleFilter = `subtitles='${normalizedSrtPath}':force_style=${styleString}`;
-                        videoFilters.push(subtitleFilter);
-                        console.log(`✅ 자막 필터 추가: 화면 하단 20% 위치 (최대 2줄)`);
-                        console.log(`📝 자막 파일 절대 경로: ${absoluteSrtPath}`);
-                        console.log(`📝 정규화된 경로: ${normalizedSrtPath}`);
+            // FFmpeg로 영상 생성 (이미지 슬라이드쇼 + 오디오)
+            await new Promise<void>((resolve, reject) => {
+                console.log('FFmpeg 영상 생성 시작...');
+
+                // 오디오 파일의 실제 길이 확인 (ffprobe 사용)
+                const getAudioDuration = (audioPath: string): Promise<number> => {
+                    return new Promise((resolve, reject) => {
+                        ffmpeg.ffprobe(audioPath, (err, metadata) => {
+                            if (err) {
+                                console.warn(`⚠️ 오디오 길이 확인 실패, duration 값 사용: ${err.message}`);
+                                resolve(duration); // 실패 시 전달받은 duration 사용
+                            } else {
+                                const actualDuration = metadata.format?.duration || duration;
+                                console.log(`✅ 오디오 실제 길이: ${actualDuration.toFixed(2)}초 (전달받은 duration: ${duration}초)`);
+                                resolve(actualDuration);
+                            }
+                        });
+                    });
+                };
+
+                getAudioDuration(audioPath).then(async (actualAudioDuration) => {
+                    // 실제 오디오 길이에 맞춰 이미지 duration 재계산
+                    const adjustedImageDuration = parseFloat((actualAudioDuration / imagePaths.length).toFixed(2));
+                    console.log(`📊 이미지 duration 재계산: ${actualAudioDuration}초 / ${imagePaths.length}개 = ${adjustedImageDuration}초`);
+
+                    // 자막 타이밍을 실제 오디오 길이 기준으로 비율 스케일링
+                    // (균등 재분배 X → SSML mark의 상대적 타이밍 보존)
+                    if (imageNarrations.length > 0 && duration > 0 && Math.abs(actualAudioDuration - duration) > 0.05) {
+                        const scale = actualAudioDuration / duration;
+                        console.log(`\n🔧 자막 타이밍 스케일: x${scale.toFixed(4)} (${duration}s → ${actualAudioDuration.toFixed(2)}s)`);
+                        imageNarrations.forEach(n => {
+                            n.start = n.start * scale;
+                            n.end = n.end * scale;
+                        });
+                        // 마지막 cue end를 실제 오디오 길이로 고정
+                        imageNarrations[imageNarrations.length - 1].end = actualAudioDuration;
                     }
-                } catch (error) {
-                    console.warn(`⚠️ 자막 필터 추가 실패, 자막 없이 진행: ${error}`);
-                    // 자막 필터 없이 진행
-                }
-            }
 
-            const videoFilter = videoFilters.join(',');
+                    // FFmpeg concat 파일 생성 (마지막 이미지에도 duration 명시)
+                    const concatFilePath = path.join(tempDir, `concat_${videoId}.txt`);
+                    const concatLines = imagePaths.map((imgPath, index) => {
+                        // 마지막 이미지도 duration 명시하여 정확한 길이 보장
+                        return `file '${imgPath.replace(/'/g, "\\'")}'\nduration ${adjustedImageDuration}`;
+                    }).join('\n') + `\nfile '${imagePaths[imagePaths.length - 1].replace(/'/g, "\\'")}'`;
 
-            // 이미지 하나를 TTS 시간 동안 유지하는 비디오 생성
-            await new Promise<void>(async (resolve, reject) => {
-                console.log(`\n--- 장면 비디오 생성 ---`);
-                console.log(`이미지: ${path.basename(imagePath)}`);
-                console.log(`오디오: 전체 (${actualAudioDuration.toFixed(2)}초)`);
-                if (finalSrtPath) {
-                    console.log(`자막: ${path.basename(finalSrtPath)}`);
-                }
-                console.log(`출력: ${path.basename(outputPath)}`);
-                console.log(`출력 전체 경로: ${outputPath}`);
+                    writeFile(concatFilePath, concatLines).then(async () => {
+                        // 자막 필터 생성 (SRT + libass 자동 래핑)
+                        // fps=25 를 scale 앞에 삽입:
+                        // concat demuxer는 이미지 1장당 프레임 1개만 생성하므로
+                        // subtitle 필터가 항상 PTS=0만 보게 됨 → 자막이 첫 번째 cue에 고정됨
+                        // fps=25 로 먼저 프레임을 복제하면 PTS가 정상적으로 진행되어 자막이 교체됨
+                        let videoFilter =
+                            "setpts=PTS-STARTPTS," +
+                            "fps=25," +
+                            "scale=1080:1920:force_original_aspect_ratio=decrease," +
+                            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
 
-                // Windows에서 경로 정규화: 입력 경로도 정규화
-                let normalizedImagePath = path.resolve(imagePath);
-                let normalizedAudioPath = path.resolve(audioPath);
-                let normalizedOutputPath = path.resolve(outputPath);
+                        // 자막을 음성보다 약간 앞서 표시 (자막이 늦게 나오는 현상 보정)
+                        const SUBTITLE_OFFSET_SEC = 0.9;
 
-                // 출력 디렉토리 존재 확인 및 생성
-                const outputDir = path.dirname(normalizedOutputPath);
-                if (!(await exists(outputDir))) {
-                    try {
-                        await mkdir(outputDir, { recursive: true });
-                        console.log(`✅ 출력 디렉토리 생성 완료: ${outputDir}`);
-                    } catch (mkdirErr: any) {
-                        console.error(`❌ 출력 디렉토리 생성 실패: ${mkdirErr.message}`);
-                        reject(new Error(`출력 디렉토리 생성 실패: ${mkdirErr.message}`));
-                        return;
-                    }
-                }
+                        // SRT 항상 imageNarrations 기준으로 생성 (offset 적용 가능하도록)
+                        // ttsSrtPath가 있어도 무시하고 imageNarrations 사용
+                        let finalSrtPath: string | null = null;
 
-                // 출력 파일이 이미 존재하면 삭제 (ffmpeg가 덮어쓰기 실패할 수 있음)
-                if (await exists(normalizedOutputPath)) {
-                    try {
-                        fs.unlinkSync(normalizedOutputPath);
-                        console.log(`🗑️ 기존 출력 파일 삭제: ${normalizedOutputPath}`);
-                    } catch (unlinkErr: any) {
-                        console.warn(`⚠️ 기존 출력 파일 삭제 실패: ${unlinkErr.message}`);
-                    }
-                }
+                        if (imageNarrations.length > 0) {
+                            finalSrtPath = path.join(tempDir, `subtitle_${videoId}.srt`);
+                            const srtLines: string[] = [];
 
-                // 입력 파일 존재 확인
-                if (!(await exists(normalizedImagePath))) {
-                    reject(new Error(`이미지 파일을 찾을 수 없습니다: ${normalizedImagePath}`));
-                    return;
-                }
-                if (!(await exists(normalizedAudioPath))) {
-                    reject(new Error(`오디오 파일을 찾을 수 없습니다: ${normalizedAudioPath}`));
-                    return;
-                }
+                            for (let idx = 0; idx < imageNarrations.length; idx++) {
+                                const narration = imageNarrations[idx];
+                                const start = Math.max(0, narration.start - SUBTITLE_OFFSET_SEC);
+                                const end   = Math.max(start + 0.1, narration.end - SUBTITLE_OFFSET_SEC);
 
-                const ffmpegCommand = ffmpeg(normalizedImagePath)
-                    .inputOptions(['-loop', '1']) // 이미지를 루프로 재생
-                    .input(normalizedAudioPath)
-                    .videoCodec('libx264')
-                    .audioCodec('aac')
-                    .outputOptions([
-                        '-y', // 출력 파일 덮어쓰기 허용
-                        '-pix_fmt', 'yuv420p',
-                        '-r', '30',
-                        '-shortest', // 오디오 길이에 맞춤
-                        '-vf', videoFilter
-                    ])
-                    .output(normalizedOutputPath);
+                                // 긴 자막은 더 작은 폰트로 표시 (ASS inline override tag)
+                                const fontTag = narration.text.length > 28 ? '{\\fs8}' : narration.text.length > 22 ? '{\\fs9}' : '';
 
-                ffmpegCommand
-                    .on('start', (cmd) => console.log(`FFmpeg: ${cmd}`))
-                    .on('end', () => {
-                        console.log(`✅ 장면 비디오 생성 완료`);
-                        // 임시 자막 파일 정리
-                        if (finalSrtPath && finalSrtPath !== ttsSrtPath) {
-                            fs.unlink(finalSrtPath, () => {});
+                                srtLines.push(`${idx + 1}`);
+                                srtLines.push(`${formatSRTTime(start)} --> ${formatSRTTime(end)}`);
+                                srtLines.push(fontTag + narration.text);
+                                srtLines.push('');
+
+                                console.log(`  📝 cue ${idx + 1}: ${start.toFixed(2)}s→${end.toFixed(2)}s "${narration.text.substring(0, 40)}"`);
+                            }
+
+                            await writeFile(finalSrtPath, srtLines.join('\n'), 'utf8');
+                            console.log(`✅ SRT 생성 완료 (offset -${SUBTITLE_OFFSET_SEC}s 적용): ${finalSrtPath}`);
                         }
-                        resolve();
-                    })
-                    .on('error', (err) => {
-                        console.error(`❌ 장면 비디오 생성 실패:`, err);
-                        // 임시 자막 파일 정리
-                        if (finalSrtPath && finalSrtPath !== ttsSrtPath) {
-                            fs.unlink(finalSrtPath, () => {});
+
+                        // 최종 SRT 파일 검증 및 적용
+                        if (finalSrtPath && (await exists(finalSrtPath))) {
+                            const verifyContent = await readFile(finalSrtPath, 'utf8');
+                            console.log(`\n🔍 최종 SRT 파일 검증:`);
+                            console.log(`   파일 경로: ${finalSrtPath}`);
+                            console.log(`   파일 존재: ✅`);
+                            console.log(`   파일 크기: ${verifyContent.length} 바이트`);
+                            console.log(`   첫 200자: "${verifyContent.substring(0, 200)}"`);
+                            console.log(`   ${ttsSrtPath ? '📌 TTS에서 생성한 SRT 파일 사용' : '📝 새로 생성한 SRT 파일 사용'}`);
+
+                            // FFmpeg subtitles 필터 경로 이스케이프 (문서 _escape_path 패턴)
+                            // 1) Windows 백슬래시 → 슬래시
+                            // 2) 콜론(:) → \:  (드라이브 문자 등)
+                            // 3) 작은따옴표 → \'
+                            let escapedSrtPath = finalSrtPath
+                                .replace(/\\/g, '/')
+                                .replace(/:/g, '\\:')
+                                .replace(/'/g, "\\'");
+
+                            // 작은따옴표로 경로 감싸기 (FFmpeg 필터 문법)
+                            const quotedSrtPath = `'${escapedSrtPath}'`;
+
+                            // libass 스타일: 하단 중앙, 여백/외곽선/배경
+                            // force_style 값 내부의 쉼표는 필터 구분자이므로 \, 로 이스케이프 필수
+                            // 색상 코드는 ASS 형식 그대로 사용: &HAABBGGRR (백슬래시 불필요)
+                            const styleParts = [
+                                'Alignment=2',              // 하단 중앙
+                                'MarginV=60',               // 하단 여백
+                                'MarginL=40',               // 좌측 여백 (텍스트 잘림 방지)
+                                'MarginR=40',               // 우측 여백 (텍스트 잘림 방지)
+                                'FontSize=11',              // libass PlayResY=288 기준 → 실제 1920px에서 ~73px
+                                'BorderStyle=3',            // 배경 박스 스타일
+                                'Outline=1',                // 외곽선 두께
+                                'Shadow=0',
+                                'PrimaryColour=&H00FFFFFF', // 불투명 흰색
+                                'BackColour=&H99000000'     // 60% 투명 검정 배경
+                            ];
+                            // 쉼표를 \, 로 이스케이프 (JS 문자열: '\\,' → FFmpeg 수신: \,)
+                            const style = styleParts.join('\\,');
+
+                            // subtitles 필터: force_style 값도 작은따옴표로 감싸기
+                            videoFilter += `,subtitles=${quotedSrtPath}:charenc=UTF-8:force_style='${style}'`;
+                            console.log(`\n✅ subtitles 필터 적용 (자동 래핑)`);
+                            console.log(`   SRT 파일 경로: ${finalSrtPath}`);
+                            console.log(`   이스케이프된 경로: ${escapedSrtPath}`);
+                            console.log(`   전체 videoFilter: ${videoFilter}`);
+                        } else {
+                            console.warn('⚠️ 표시할 자막 파일이 없어 자막 없이 생성합니다.');
                         }
-                        reject(err);
-                    })
-                    .run();
+
+                        console.log('=== FFmpeg 비디오 필터 ===');
+                        console.log(videoFilter);
+
+                        // FFmpeg outputOptions 준비
+                        const outputOpts: string[] = [
+                            "-pix_fmt", "yuv420p",
+                            "-r", "30",
+                            "-t", actualAudioDuration.toFixed(2),
+                            "-map", "0:v", // 비디오 스트림 매핑 (첫 번째 입력의 비디오)
+                            "-map", "1:a", // 오디오 스트림 매핑 (두 번째 입력의 오디오)
+                        ];
+
+                        // 비디오 필터 적용 (자막 포함)
+                        if (videoFilter && videoFilter.trim()) {
+                            outputOpts.push("-vf");
+                            outputOpts.push(videoFilter);
+                            console.log(`✅ 비디오 필터 적용: ${videoFilter}`);
+                            console.log(`📝 필터 길이: ${videoFilter.length}자`);
+                        }
+
+                        // FFmpeg 명령 구성
+                        const command = ffmpeg(concatFilePath)
+                            .inputOptions(['-f', 'concat', '-safe', '0'])
+                            .input(audioPath)
+                            .videoCodec('libx264')
+                            .audioCodec('aac')
+                            .outputOptions(outputOpts)
+                            .output(outputPath)
+                            .on('start', (commandLine) => {
+                                console.log('=== FFmpeg 명령어 전체 ===');
+                                console.log(commandLine);
+                                console.log('=== FFmpeg 명령어 끝 ===');
+                            })
+                            .on('stderr', line => console.log('ffmpeg:', line))
+                            .addOption('-v', 'debug') // 자세한 로그
+                            .on('progress', (progress) => {
+                                if (progress.percent) {
+                                    console.log('진행률:', Math.round(progress.percent) + '%');
+                                }
+                            })
+                            .on('end', () => {
+                                console.log('✅ 영상 생성 완료:', outputPath);
+                                // concat 파일 정리
+                                fs.unlink(concatFilePath, () => { });
+                                resolve();
+                            })
+                            .on('error', (err) => {
+                                console.error('❌ FFmpeg 오류:', err);
+                                // concat 파일 정리
+                                fs.unlink(concatFilePath, () => { });
+                                reject(err);
+                            })
+                            .run();
+                    }).catch(reject);
+                }).catch(reject);
             });
 
             // 생성된 영상의 상대 경로
@@ -585,32 +529,6 @@ router.post('/', async (req: Request, res: Response) => {
         });
     }
 });
-
-/**
- * Windows에서 한글 경로를 짧은 경로(8.3 형식)로 변환
- * @param longPath 긴 경로
- * @returns 짧은 경로 또는 원본 경로
- */
-function getShortPath(longPath: string): string {
-    if (process.platform !== 'win32') {
-        return longPath;
-    }
-
-    try {
-        // PowerShell을 사용하여 짧은 경로 얻기
-        const command = `powershell -Command "(New-Object -ComObject Scripting.FileSystemObject).GetFile('${longPath.replace(/'/g, "''")}').ShortPath"`;
-        const shortPath = execSync(command, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
-        if (shortPath && fs.existsSync(shortPath)) {
-            console.log(`📁 짧은 경로 변환: ${longPath} -> ${shortPath}`);
-            return shortPath;
-        }
-    } catch (error) {
-        // 짧은 경로를 얻을 수 없으면 원본 경로 사용
-        console.warn(`⚠️ 짧은 경로 변환 실패, 원본 경로 사용: ${error}`);
-    }
-
-    return longPath;
-}
 
 /**
  * 오디오 파일 다운로드
@@ -654,102 +572,6 @@ function formatSRTTime(seconds: number): string {
     const milliseconds = Math.floor((seconds % 1) * 1000);
 
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
-}
-
-/**
- * SRT 시간 문자열을 초로 변환
- * @param srtTime SRT 형식 시간 문자열 (예: "00:00:12,345")
- * @returns 초 단위 시간
- */
-function parseSRTTime(srtTime: string): number {
-    const [timePart, msPart] = srtTime.split(',');
-    const [hours, minutes, seconds] = timePart.split(':').map(Number);
-    const milliseconds = msPart ? parseInt(msPart) : 0;
-    return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-}
-
-/**
- * 텍스트를 최대 2줄로 분할하고 줄 수 계산
- * @param text 원본 텍스트
- * @returns 분할된 텍스트 배열 (각 요소는 최대 2줄)
- */
-function splitTextIntoTwoLines(text: string): string[] {
-    // 문장 단위로 분할
-    const sentences = text.split(/(?<=[\.!?])\s+/).filter(s => s.trim());
-    const result: string[] = [];
-    let currentLines: string[] = [];
-
-    for (const sentence of sentences) {
-        const testLines = [...currentLines, sentence];
-        const lineCount = testLines.length;
-
-        if (lineCount <= 2) {
-            currentLines = testLines;
-        } else {
-            // 2줄을 넘으면 현재까지를 저장하고 새로 시작
-            if (currentLines.length > 0) {
-                result.push(currentLines.join(' '));
-            }
-            currentLines = [sentence];
-        }
-    }
-
-    // 마지막 남은 줄들 추가
-    if (currentLines.length > 0) {
-        result.push(currentLines.join(' '));
-    }
-
-    return result.length > 0 ? result : [text];
-}
-
-/**
- * SRT 파일을 파싱하여 최대 2줄로 재구성
- * @param srtPath 원본 SRT 파일 경로
- * @param totalDuration 영상 총 길이 (초)
- * @param outputPath 출력 SRT 파일 경로
- */
-async function reformatSRTForTwoLines(srtPath: string, totalDuration: number, outputPath: string): Promise<void> {
-    const srtContent = await readFile(srtPath, 'utf8');
-    
-    // SRT 파일 파싱
-    const subtitleBlocks = srtContent.split(/\n\s*\n/).filter(block => block.trim());
-    const allTexts: string[] = [];
-
-    for (const block of subtitleBlocks) {
-        const lines = block.trim().split('\n');
-        if (lines.length >= 3) {
-            // 시간 정보는 무시하고 텍스트만 추출
-            const text = lines.slice(2).join(' ').trim();
-            if (text) {
-                allTexts.push(text);
-            }
-        }
-    }
-
-    // 전체 텍스트를 합치고 최대 2줄로 분할
-    const fullText = allTexts.join(' ');
-    const twoLineTexts = splitTextIntoTwoLines(fullText);
-    const lineCount = twoLineTexts.length;
-
-    console.log(`📝 자막 줄 수 계산: ${lineCount}개 (각 최대 2줄)`);
-    console.log(`⏱️ 영상 총 길이: ${totalDuration.toFixed(2)}초`);
-    
-    const durationPerSubtitle = totalDuration / lineCount;
-    console.log(`📊 자막당 평균 시간: ${durationPerSubtitle.toFixed(2)}초`);
-
-    // 새로운 SRT 파일 생성
-    let newSRTContent = '';
-    for (let i = 0; i < twoLineTexts.length; i++) {
-        const startTime = i * durationPerSubtitle;
-        const endTime = (i === twoLineTexts.length - 1) ? totalDuration : (i + 1) * durationPerSubtitle;
-        
-        newSRTContent += `${i + 1}\n`;
-        newSRTContent += `${formatSRTTime(startTime)} --> ${formatSRTTime(endTime)}\n`;
-        newSRTContent += `${twoLineTexts[i]}\n\n`;
-    }
-
-    await writeFile(outputPath, newSRTContent, 'utf8');
-    console.log(`✅ 재구성된 SRT 파일 저장: ${outputPath}`);
 }
 
 export default router;

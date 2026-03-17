@@ -2,14 +2,19 @@ import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import * as fs from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
-import { GOOGLE_APPLICATION_CREDENTIALS } from '../config/env';
-// FFmpeg 경로 자동 설정
-import '../config/ffmpeg';
+import { spawn } from 'child_process';
+
+export interface SubtitleCue {
+    start: number;
+    end: number;
+    text: string;
+}
 
 export interface TTSResult {
     audioPath: string;
     srtPath?: string;
     duration: number;
+    cues?: SubtitleCue[]; // SSML mark 기반 정확한 자막 타이밍
 }
 
 export class TTSService {
@@ -20,79 +25,12 @@ export class TTSService {
     constructor() {
         console.log('🔧 TTSService 초기화 시작...');
 
-        // Google Cloud credentials 경로 확인 및 정규화
-        let credentialsPath: string | undefined;
-        
-        if (GOOGLE_APPLICATION_CREDENTIALS) {
-            // macOS/Linux 경로 형식(/Volumes/...)을 Windows 경로로 변환
-            let normalizedPath = GOOGLE_APPLICATION_CREDENTIALS;
-            
-            // 절대 경로가 /Volumes로 시작하는 경우 (macOS 경로)
-            if (normalizedPath.startsWith('/Volumes/')) {
-                console.warn('⚠️ macOS 경로 형식 감지됨. Windows 경로로 변환 필요합니다.');
-                console.warn(`원본 경로: ${normalizedPath}`);
-                // Windows에서는 이 경로를 직접 사용할 수 없으므로 에러 발생
-                throw new Error(
-                    `Google Cloud credentials 경로가 macOS 형식입니다: ${normalizedPath}\n` +
-                    `Windows 환경에서는 올바른 Windows 경로 형식으로 설정해주세요.\n` +
-                    `예: C:\\path\\to\\your\\credentials.json 또는 상대 경로 사용`
-                );
-            }
-            
-            // 상대 경로인 경우 절대 경로로 변환
-            if (!path.isAbsolute(normalizedPath)) {
-                // 프로젝트 루트 기준으로 상대 경로 해석
-                const projectRoot = path.resolve(__dirname, '../../..');
-                normalizedPath = path.resolve(projectRoot, normalizedPath);
-            }
-            
-            // 경로 정규화 (Windows 경로 구분자 처리)
-            normalizedPath = path.normalize(normalizedPath);
-            
-            // 파일 존재 확인
-            if (!fs.existsSync(normalizedPath)) {
-                throw new Error(
-                    `Google Cloud credentials 파일을 찾을 수 없습니다: ${normalizedPath}\n` +
-                    `원본 경로: ${GOOGLE_APPLICATION_CREDENTIALS}\n` +
-                    `파일이 존재하는지 확인하고 GOOGLE_APPLICATION_CREDENTIALS 환경 변수를 올바르게 설정해주세요.`
-                );
-            }
-            
-            credentialsPath = normalizedPath;
-            console.log(`✅ Google Cloud credentials 경로 확인: ${credentialsPath}`);
-            
-            // 환경 변수 업데이트 (TextToSpeechClient가 읽을 수 있도록)
-            process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-        } else {
-            console.warn('⚠️ GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.');
-            console.warn('Google Cloud의 기본 인증 방식을 사용합니다 (gcloud CLI 또는 Application Default Credentials).');
-        }
-
         try {
-            // credentials 경로가 있으면 명시적으로 전달
-            const clientOptions = credentialsPath 
-                ? { keyFilename: credentialsPath }
-                : {};
-            
-            this.client = new TextToSpeechClient(clientOptions);
+            this.client = new TextToSpeechClient();
             console.log('✅ Google Cloud TTS 클라이언트 생성 성공');
         } catch (error) {
             console.error('❌ Google Cloud TTS 클라이언트 생성 실패:', error);
-            const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
-            
-            // 더 자세한 에러 메시지 제공
-            if (errorMessage.includes('ENOENT') || errorMessage.includes('does not exist')) {
-                throw new Error(
-                    `TTS 클라이언트 초기화 실패: Google Cloud credentials 파일을 찾을 수 없습니다.\n` +
-                    `설정된 경로: ${GOOGLE_APPLICATION_CREDENTIALS || '(설정되지 않음)'}\n` +
-                    `해결 방법:\n` +
-                    `1. .env 파일에 GOOGLE_APPLICATION_CREDENTIALS를 올바른 Windows 경로로 설정하세요.\n` +
-                    `2. 예: GOOGLE_APPLICATION_CREDENTIALS=C:\\path\\to\\credentials.json\n` +
-                    `3. 또는 상대 경로 사용: GOOGLE_APPLICATION_CREDENTIALS=./credentials.json`
-                );
-            }
-            
-            throw new Error(`TTS 클라이언트 초기화 실패: ${errorMessage}`);
+            throw new Error(`TTS 클라이언트 초기화 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
         }
 
         this.outputDir = path.join(__dirname, '../../uploads/audio');
@@ -126,17 +64,41 @@ export class TTSService {
     /**
      * 텍스트를 SSML 형식으로 변환
      */
-    private textToSSML(text: string): string {
-        // 특수 문자 이스케이프
-        const escaped = text
+    private escapeSSML(text: string): string {
+        return text
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&apos;');
+    }
 
-        // SSML 형식으로 감싸기 (한국어 여성 음성, 자연스러운 속도)
-        return `<speak>${escaped}</speak>`;
+    private textToSSML(text: string): string {
+        return `<speak>${this.escapeSSML(text)}</speak>`;
+    }
+
+    /**
+     * 텍스트를 cue로 분할 후 SSML <mark> 태그를 삽입
+     * TTS 응답의 timepoints로 정확한 자막 타이밍 획득
+     */
+    private buildSSMLWithMarks(cues: string[]): string {
+        const parts = cues.map((cue, i) => `<mark name="${i}"/>${this.escapeSSML(cue)}`);
+        return `<speak>${parts.join(' ')}</speak>`;
+    }
+
+    private mergeShorCues(cues: string[], maxChars: number, minChars: number = 10): string[] {
+        const MERGE_TOLERANCE = 6; // 짧은 이음말(합니다/입니다 등)은 maxChars 초과해도 병합
+        const merged: string[] = [];
+        for (const s of cues) {
+            if (merged.length === 0) { merged.push(s); continue; }
+            const last = merged[merged.length - 1];
+            if (s.length < minChars && last.length + s.length + 1 <= maxChars + MERGE_TOLERANCE) {
+                merged[merged.length - 1] = `${last} ${s}`.trim();
+            } else {
+                merged.push(s);
+            }
+        }
+        return merged;
     }
 
     /**
@@ -173,29 +135,70 @@ export class TTSService {
     }
 
     /**
-     * SRT 파일 생성
+     * 텍스트를 최대 글자 수 기준으로 어절 단위 분할
+     */
+    private splitByCharLimit(text: string, maxChars: number): string[] {
+        if (text.length <= maxChars) return [text];
+        const words = text.split(' ');
+        const chunks: string[] = [];
+        let current = '';
+        for (const word of words) {
+            const next = current ? `${current} ${word}` : word;
+            if (next.length > maxChars && current) {
+                chunks.push(current);
+                current = word;
+            } else {
+                current = next;
+            }
+        }
+        if (current) chunks.push(current);
+        return chunks.length ? chunks : [text];
+    }
+
+    /**
+     * SRT 파일 생성 (글자 수 기준 cue 분할 포함)
      */
     private async generateSRT(
         sentences: string[],
         totalDuration: number,
         outputPath: string
     ): Promise<void> {
-        const srtLines: string[] = [];
-        const blockCount = sentences.length;
-        const durationPerBlock = totalDuration / blockCount;
+        const MAX_CHARS_PER_CUE = 22; // 한 cue 최대 글자 수
+        const MIN_CHARS_PER_CUE = 10; // 이 미만은 이전 cue에 병합
 
-        for (let i = 0; i < sentences.length; i++) {
+        // 1단계: 글자 수 초과 문장 추가 분할
+        let cues: string[] = sentences.flatMap(s => this.splitByCharLimit(s, MAX_CHARS_PER_CUE));
+
+        // 2단계: 너무 짧은 cue 병합
+        const merged: string[] = [];
+        for (const s of cues) {
+            if (merged.length === 0) { merged.push(s); continue; }
+            const last = merged[merged.length - 1];
+            if (s.length < MIN_CHARS_PER_CUE && last.length + s.length + 1 <= MAX_CHARS_PER_CUE) {
+                merged[merged.length - 1] = `${last} ${s}`.trim();
+            } else {
+                merged.push(s);
+            }
+        }
+        cues = merged;
+
+        // 3단계: 총 duration 균등 분배
+        const blockCount = cues.length;
+        const durationPerBlock = totalDuration / blockCount;
+        const srtLines: string[] = [];
+
+        for (let i = 0; i < cues.length; i++) {
             const startTime = i * durationPerBlock;
-            const endTime = i === sentences.length - 1 ? totalDuration : (i + 1) * durationPerBlock;
+            const endTime = i === cues.length - 1 ? totalDuration : (i + 1) * durationPerBlock;
 
             srtLines.push(`${i + 1}`);
             srtLines.push(`${this.formatSRTTime(startTime)} --> ${this.formatSRTTime(endTime)}`);
-            srtLines.push(sentences[i]);
-            srtLines.push(''); // 빈 줄
+            srtLines.push(cues[i]);
+            srtLines.push('');
         }
 
         fs.writeFileSync(outputPath, srtLines.join('\n'), 'utf8');
-        console.log(`✅ SRT 파일 생성 완료: ${outputPath}`);
+        console.log(`✅ SRT 파일 생성 완료: ${outputPath} (${cues.length}개 cue)`);
     }
 
     /**
@@ -208,6 +211,118 @@ export class TTSService {
         const milliseconds = Math.floor((seconds % 1) * 1000);
 
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+    }
+
+    /**
+     * FFmpeg silencedetect로 오디오의 묵음 구간 감지
+     */
+    private detectSilences(audioPath: string): Promise<Array<{ start: number; end: number }>> {
+        return new Promise((resolve) => {
+            const silences: Array<{ start: number; end: number }> = [];
+            let currentStart: number | null = null;
+
+            const proc = spawn('ffmpeg', [
+                '-i', audioPath,
+                '-af', 'silencedetect=noise=-30dB:d=0.15',
+                '-f', 'null', '-'
+            ]);
+
+            const handleData = (data: Buffer) => {
+                const lines = data.toString().split('\n');
+                for (const line of lines) {
+                    const sm = line.match(/silence_start:\s*([\d.]+)/);
+                    const em = line.match(/silence_end:\s*([\d.]+)/);
+                    if (sm) currentStart = parseFloat(sm[1]);
+                    if (em && currentStart !== null) {
+                        silences.push({ start: currentStart, end: parseFloat(em[1]) });
+                        currentStart = null;
+                    }
+                }
+            };
+
+            proc.stderr.on('data', handleData);
+            proc.on('close', () => {
+                console.log(`🔇 silencedetect 완료: ${silences.length}개 묵음 구간`);
+                resolve(silences);
+            });
+            proc.on('error', (err) => {
+                console.warn(`⚠️ silencedetect 실패 (fallback 사용): ${err.message}`);
+                resolve([]);
+            });
+        });
+    }
+
+    /**
+     * 묵음 구간 기반으로 텍스트를 의미 단위 cue로 분할
+     */
+    private buildCuesFromSilences(
+        text: string,
+        silences: Array<{ start: number; end: number }>,
+        totalDuration: number
+    ): SubtitleCue[] {
+        const MAX_CHARS = 22;
+
+        // 묵음 구간 사이의 발화 구간 추출
+        const segments: Array<{ start: number; end: number }> = [];
+        let speechStart = 0;
+        for (const silence of silences) {
+            if (silence.start - speechStart > 0.05) {
+                segments.push({ start: speechStart, end: silence.start });
+            }
+            speechStart = silence.end;
+        }
+        if (totalDuration - speechStart > 0.05) {
+            segments.push({ start: speechStart, end: totalDuration });
+        }
+
+        if (segments.length === 0) return [];
+
+        const totalSpeechDuration = segments.reduce((s, seg) => s + (seg.end - seg.start), 0);
+        const totalChars = text.length;
+
+        const cues: SubtitleCue[] = [];
+        let charPos = 0;
+
+        for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            const isLast = i === segments.length - 1;
+
+            let charEnd: number;
+            if (isLast) {
+                charEnd = totalChars;
+            } else {
+                const segDuration = seg.end - seg.start;
+                const rawEnd = Math.round(charPos + (segDuration / totalSpeechDuration) * totalChars);
+                // 가장 가까운 공백으로 스냅
+                let fw = rawEnd, bw = rawEnd;
+                while (fw < totalChars && text[fw] !== ' ') fw++;
+                while (bw > charPos && text[bw] !== ' ') bw--;
+                charEnd = (fw - rawEnd) <= (rawEnd - bw) ? fw : bw;
+            }
+
+            const segmentText = text.slice(charPos, charEnd).trim();
+            charPos = Math.min(charEnd + 1, totalChars);
+            if (!segmentText) continue;
+
+            const subCues = this.mergeShorCues(this.splitByCharLimit(segmentText, MAX_CHARS), MAX_CHARS);
+            const segDuration = seg.end - seg.start;
+            const subDur = segDuration / subCues.length;
+
+            subCues.forEach((cueText, j) => {
+                cues.push({
+                    text: cueText,
+                    start: seg.start + j * subDur,
+                    end: seg.start + (j + 1) * subDur,
+                });
+            });
+        }
+
+        if (cues.length > 0) {
+            cues[cues.length - 1].end = totalDuration;
+        }
+
+        console.log(`✅ silencedetect 기반 cue 생성 완료: ${cues.length}개`);
+        return cues;
     }
 
     /**
@@ -229,27 +344,30 @@ export class TTSService {
                 throw new Error('파일명이 비어있습니다.');
             }
 
-            // 텍스트를 SSML로 변환
-            const ssml = this.textToSSML(text);
-            console.log('📝 SSML 변환 완료');
-            console.log(`📝 SSML 길이: ${ssml.length}자`);
+            // 텍스트를 cue로 분할 후 SSML mark 삽입
+            const MAX_CHARS = 22;
+            const rawCues = this.splitIntoSentences(text).flatMap(s => this.splitByCharLimit(s, MAX_CHARS));
+            const cueTexts = this.mergeShorCues(rawCues, MAX_CHARS);
 
-            // 한국어 여성 음성으로 설정 (SSML 사용)
-            const request = {
-                input: { ssml }, // SSML 사용
+            const ssml = this.buildSSMLWithMarks(cueTexts);
+            console.log(`📝 SSML with marks 생성 완료 (${cueTexts.length}개 cue)`);
+
+            // enableTimePointing: SSML_MARK 로 각 mark의 정확한 타임스탬프 요청
+            const request: any = {
+                input: { ssml },
                 voice: {
                     languageCode: 'ko-KR',
-                    name: 'ko-KR-Neural2-A', // 한국어 여성 음성
+                    name: 'ko-KR-Neural2-A',
                     ssmlGender: 'FEMALE' as const,
                 },
                 audioConfig: {
                     audioEncoding: 'MP3' as const,
-                    speakingRate: 1.0, // 정상 속도
-                    pitch: 0.0, // 정상 피치
+                    speakingRate: 1.0,
+                    pitch: 0.0,
                 },
+                enableTimePointing: ['SSML_MARK'],
             };
 
-            console.log('🔧 TTS 요청 객체:', JSON.stringify(request, null, 2));
             console.log('🔊 Google Cloud TTS API 호출 중...');
 
             const [response] = await this.client.synthesizeSpeech(request);
@@ -284,23 +402,57 @@ export class TTSService {
             const duration = await this.getAudioDuration(outputPath);
             console.log(`⏱️ 오디오 길이: ${duration.toFixed(2)}초`);
 
-            // SRT 파일 생성
+            // 자막 타이밍 생성: silencedetect → SSML marks → 균등 분배 순으로 시도
+            let cues: SubtitleCue[] | undefined;
             let srtPath: string | undefined;
-            if (generateSRT) {
-                const sentences = this.splitIntoSentences(text);
-                console.log(`📝 문장 분할 완료: ${sentences.length}개 문장`);
 
+            // 1차: silencedetect 기반 의미 단위 분할
+            const silences = await this.detectSilences(outputPath);
+            if (silences.length >= 1) {
+                cues = this.buildCuesFromSilences(text, silences, duration);
+                if (cues.length === 0) cues = undefined; // 실패 시 fallback
+            }
+
+            // 2차: SSML mark timepoints
+            if (!cues) {
+                const timepoints: Array<{ markName: string; timeSeconds: number }> =
+                    (response as any).timepoints || [];
+
+                if (timepoints.length > 0 && timepoints.length === cueTexts.length) {
+                    console.log(`✅ SSML timepoints 수신: ${timepoints.length}개`);
+                    cues = cueTexts.map((t, i) => ({
+                        text: t,
+                        start: timepoints[i].timeSeconds,
+                        end: i < timepoints.length - 1 ? timepoints[i + 1].timeSeconds : duration,
+                    }));
+                } else {
+                    // 3차: 균등 분배
+                    console.warn(`⚠️ timepoints 없음 (${timepoints.length}/${cueTexts.length}), 균등 분배 사용`);
+                    const dur = duration / cueTexts.length;
+                    cues = cueTexts.map((t, i) => ({
+                        text: t,
+                        start: i * dur,
+                        end: i === cueTexts.length - 1 ? duration : (i + 1) * dur,
+                    }));
+                }
+            }
+
+            if (generateSRT && cues) {
                 srtPath = path.join(this.srtDir, `${filename}.srt`);
-                await this.generateSRT(sentences, duration, srtPath);
+                const srtLines: string[] = [];
+                cues.forEach((cue, i) => {
+                    srtLines.push(`${i + 1}`);
+                    srtLines.push(`${this.formatSRTTime(cue.start)} --> ${this.formatSRTTime(cue.end)}`);
+                    srtLines.push(cue.text);
+                    srtLines.push('');
+                });
+                fs.writeFileSync(srtPath, srtLines.join('\n'), 'utf8');
+                console.log(`✅ SRT 생성 완료: ${srtPath} (${cues.length}개 cue)`);
             }
 
             console.log('=== TTS 변환 디버깅 완료 ===');
 
-            return {
-                audioPath: outputPath,
-                srtPath,
-                duration
-            };
+            return { audioPath: outputPath, srtPath, duration, cues };
 
         } catch (error) {
             console.error('=== TTS 변환 에러 디버깅 ===');
@@ -316,14 +468,14 @@ export class TTSService {
     /**
      * 스크립트를 여러 개의 음성 파일로 분할하여 변환
      */
-    async generateAudioFromScript(script: any, baseFilename: string, generateSRT: boolean = true): Promise<Array<{ audioPath: string; srtPath?: string; duration: number; section: string }>> {
+    async generateAudioFromScript(script: any, baseFilename: string, generateSRT: boolean = true): Promise<Array<{ audioPath: string; srtPath?: string; duration: number; section: string; cues?: SubtitleCue[] }>> {
         try {
             console.log('=== 스크립트 오디오 생성 디버깅 시작 ===');
             console.log('🎬 스크립트에서 오디오 생성 시작');
             console.log('📝 스크립트 객체:', JSON.stringify(script, null, 2));
             console.log('📁 기본 파일명:', baseFilename);
 
-            const audioResults: Array<{ audioPath: string; srtPath?: string; duration: number; section: string }> = [];
+            const audioResults: Array<{ audioPath: string; srtPath?: string; duration: number; section: string; cues?: SubtitleCue[] }> = [];
             const sections = ['hook', 'coreMessage', 'cta'];
 
             for (const section of sections) {
@@ -340,6 +492,7 @@ export class TTSService {
                         audioPath: result.audioPath,
                         srtPath: result.srtPath,
                         duration: result.duration,
+                        cues: result.cues,
                         section
                     });
 

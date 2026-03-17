@@ -93,7 +93,8 @@ router.post('/generate', async (req, res) => {
                 srtFilename: srtFilename,
                 duration: result.duration,
                 size: audioStats.size,
-                section: result.section
+                section: result.section,
+                cues: result.cues, // SSML mark 기반 정확한 자막 타이밍
             };
         });
 

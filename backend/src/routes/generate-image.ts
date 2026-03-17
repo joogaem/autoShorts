@@ -517,7 +517,7 @@ router.get('/gemini-models', (req, res) => {
             success: true,
             data: {
                 models,
-                defaultModel: 'gemini-2.0-flash-exp',
+                defaultModel: 'gemini-2.0-flash',
                 description: 'Gemini 모델을 사용하여 고품질 이미지를 생성할 수 있습니다.'
             }
         });

@@ -29,7 +29,7 @@ if (!GOOGLE_API_KEY) {
     console.error('[Storyboard] GOOGLE_API_KEY가 설정되지 않았습니다. .env를 확인하세요.');
 }
 const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // 스토리보드 생성 서비스
 export class StoryboardGeneratorService {
