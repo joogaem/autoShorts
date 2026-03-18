@@ -80,102 +80,42 @@ export class StoryboardGeneratorService {
             });
 
             // 스토리보드 생성 프롬프트
-            const prompt = `You are a professional educational content creator who specializes in creating sophisticated visual narratives that help learners understand complex concepts through compelling stories, anecdotes, and real-world examples. Your task is to transform the given educational content into a 5-scene storyboard that uses professional storytelling to illustrate key concepts.
+            const prompt = `You are a professional educational content creator. Transform the given content into a 5-scene storyboard with STRICT visual consistency across all scenes.
 
-**CRITICAL REQUIREMENTS:**
-1. **Content Accuracy**: Base your story directly on the provided educational content.
-2. **Professional Storytelling**: 
-   - Create compelling anecdotes, case studies, or real-world examples that illustrate the concepts
-   - Use professional scenarios that demonstrate the educational content in action
-   - Include specific examples, analogies, or stories that make abstract concepts concrete
-   - Show how the concepts apply in real business, academic, or professional situations
-3. **Professional Tone**: 
-   - Use sophisticated, professional language (Korean)
-   - Create mature, realistic scenarios that professionals can relate to
-   - Focus on business, academic, or professional contexts
-4. **Visual Sophistication**: 
-   - Focus on the story and concepts, not on characters
-   - People can appear, but they should support the story and examples
-   - Use settings, environments, objects, processes, or abstract visualizations that illustrate the concept
-   - Prefer modern office environments, business settings, professional workspaces, or concept-appropriate visuals
-   - Use clean, minimalist, documentary-style aesthetics
-5. **Character Consistency**: If people are shown, they should be professionals with consistent descriptions. But prioritize the story and concept visualization.
-6. **Art Style**: All scenes must be photorealistic with cinematic, professional lighting.
-
-**Educational Content to Transform:**
+**Educational Content:**
 "${request.userPrompt}"
 
-**Your Task:**
-Create a 5-scene storyboard that tells a professional story to illustrate the educational concepts through compelling examples and visual storytelling:
-- Use the educational content as the foundation
-- Create a compelling narrative with specific examples, case studies, or anecdotes
-- Visualize the concepts through appropriate settings, processes, or demonstrations
-- Include concrete examples that make abstract concepts understandable
-- Use professional language and terminology
-- Each scene should advance the story while teaching the concept
-- Focus on what best illustrates the concept - this might be environments, processes, diagrams, or professional settings rather than people
+**STEP 1 — DEFINE VISUAL IDENTITY (do this mentally before writing prompts):**
+Before writing any scene, decide ONCE:
+- **Art style**: Choose ONE specific style (e.g., "flat vector cartoon illustration with clean outlines and soft pastel colors")
+- **Characters**: If people appear, define EACH character ONCE with specific details:
+  - Gender, approximate age, hair color/style, skin tone, clothing color and style
+  - Example: "a young woman in her 30s, short black bob hair, light skin, wearing a light blue blazer and white shirt"
+  - Keep EXACTLY the same description in every scene they appear
 
-**Storytelling Approach:**
-- Create a narrative arc that demonstrates the educational concepts
-- Include specific examples, case studies, or anecdotes
-- Show cause-and-effect relationships
-- Use "show, don't tell" approach - demonstrate concepts through visual storytelling
-- Include real-world scenarios that professionals encounter
-- Visualize concepts in whatever way best serves the story
+**STEP 2 — WRITE 5 SCENES:**
+Every single "image_prompt_english" field MUST:
+1. Start with the EXACT SAME art style string (copy it verbatim into each prompt)
+2. Include the EXACT SAME character description for each character that appears (copy verbatim)
+3. Only change the ACTION and SETTING for each scene
+4. End with: "no text, no letters, no numbers in the image"
 
-**Narrative Style Guidelines:**
-- Write like a documentary narrator or professional educator
-- Use formal yet accessible language
-- Include specific examples and concrete details
-- Focus on real-world applications and professional scenarios
-- Each scene should build understanding through storytelling
+**Storytelling:**
+- Create a narrative arc: intro → build-up → climax → resolution → wrap-up
+- Use real-world professional scenarios to illustrate the concept
+- Korean narrative should be formal and accessible
 
-**Image Style Guidelines:**
-- Focus on what best tells the story and illustrates the concept
-- Professional office environments, business settings, corporate workspaces
-- Visual demonstrations of processes, concepts, or examples
-- Clean, modern design aesthetics
-- Cartoon-style illustration, simple and friendly
-- Show specific actions, interactions, or visualizations that illustrate the concepts
+**OUTPUT FORMAT — CRITICAL:**
+Return ONLY a valid JSON array. No explanation, no markdown, no extra text.
 
-**OUTPUT FORMAT - CRITICAL:**
-You MUST return ONLY a valid JSON array. Do NOT include any explanation, preface, or additional text before or after the JSON. Return ONLY the JSON array starting with [ and ending with ].
-
-Return a JSON array with exactly 5 objects, each containing:
-- "scene_number": 1-5 (number)
-- "narrative_korean": Professional Korean narrative that tells a story illustrating the educational content (string)
-- "image_prompt_english": Professional English prompt ending with ", cartoon illustration, simple and friendly style, clean composition" (string)
-
-**Example JSON Output Format:**
 [
   {
     "scene_number": 1,
-    "narrative_korean": "한국어 내레이션 텍스트...",
-    "image_prompt_english": "English image prompt..., cartoon illustration, simple and friendly style, clean composition"
+    "narrative_korean": "한국어 내레이션...",
+    "image_prompt_english": "[EXACT ART STYLE], [EXACT CHARACTER DESCRIPTION if person appears], [scene-specific action and setting], no text no letters no numbers"
   },
-  {
-    "scene_number": 2,
-    "narrative_korean": "한국어 내레이션 텍스트...",
-    "image_prompt_english": "English image prompt..., cartoon illustration, simple and friendly style, clean composition"
-  },
-  {
-    "scene_number": 3,
-    "narrative_korean": "한국어 내레이션 텍스트...",
-    "image_prompt_english": "English image prompt..., cartoon illustration, simple and friendly style, clean composition"
-  },
-  {
-    "scene_number": 4,
-    "narrative_korean": "한국어 내레이션 텍스트...",
-    "image_prompt_english": "English image prompt..., cartoon illustration, simple and friendly style, clean composition"
-  },
-  {
-    "scene_number": 5,
-    "narrative_korean": "한국어 내레이션 텍스트...",
-    "image_prompt_english": "English image prompt..., cartoon illustration, simple and friendly style, clean composition"
-  }
-]
-
-Remember: Return ONLY the JSON array. No additional text or explanation.`;
+  ... (5 scenes total)
+]`;
 
             // Gemini API 호출
             const result = await model.generateContent(prompt);
@@ -278,10 +218,14 @@ Remember: Return ONLY the JSON array. No additional text or explanation.`;
             // 캐릭터 정보 추출 (이미지 프롬프트에서)
             const characters = this.extractCharacters(scenes);
 
+            // artStyle을 첫 번째 장면 프롬프트에서 추출 (AI가 정의한 일관 스타일 반영)
+            const inferredArtStyle = scenes[0]?.image_prompt_english?.split(',').slice(0, 3).join(',').trim()
+                || 'flat vector cartoon illustration, consistent style across all scenes';
+
             const storyboardResponse: StoryboardResponse = {
                 scenes,
                 characters,
-                artStyle: 'cartoon illustration, simple and friendly style, clean composition',
+                artStyle: inferredArtStyle,
                 estimatedDuration: 45 // 5장면 * 9초 평균
             };
 

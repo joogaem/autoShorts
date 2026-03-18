@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import * as path from 'path';
 import { ImageGenerationService } from '../services/imageGenerationService';
 
 interface StoryboardScene {
@@ -77,6 +78,9 @@ router.post('/', async (req: Request, res: Response) => {
         const results: StoryboardImageResult[] = [];
         const errors: Array<{ sceneNumber: number; error: string }> = [];
 
+        // 첫 번째로 성공한 이미지의 파일 경로 (레퍼런스용)
+        let referenceImagePath: string | undefined;
+
         // 각 장면에 대해 이미지 생성
         for (let i = 0; i < storyboard.scenes.length; i++) {
             const scene = storyboard.scenes[i];
@@ -90,7 +94,20 @@ router.post('/', async (req: Request, res: Response) => {
                     quality: 'hd' as const
                 };
 
-                const generatedImage = await imageService.generateImage(imageRequest);
+                // 2번 장면부터는 첫 번째 이미지를 레퍼런스로 사용
+                const generatedImage = await imageService.generateImage(imageRequest, referenceImagePath);
+
+                // 첫 번째 성공 이미지의 실제 파일 경로를 저장
+                if (i === 0 && !referenceImagePath) {
+                    const tempDir = process.platform === 'win32'
+                        ? 'C:\\ffmpeg'
+                        : path.join(process.cwd(), 'temp-images');
+                    const fileName = generatedImage.url.split('/').pop();
+                    if (fileName) {
+                        referenceImagePath = path.join(tempDir, fileName);
+                        console.log(`✅ 레퍼런스 이미지 설정: ${referenceImagePath}`);
+                    }
+                }
 
                 results.push({
                     sceneNumber: scene.scene_number,

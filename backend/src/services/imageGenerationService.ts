@@ -39,23 +39,32 @@ export class ImageGenerationService {
     /**
      * Gemini 내장 이미지 생성 모델을 사용하여 이미지를 생성합니다.
      */
-    public async generateImageWithGemini(request: ImageGenerationRequest): Promise<GeneratedImage> {
+    public async generateImageWithGemini(request: ImageGenerationRequest, referenceImagePath?: string): Promise<GeneratedImage> {
         console.log('=== Gemini 이미지 생성 시작 ===');
         console.log('📝 요청 데이터:', {
             prompt: request.prompt,
             style: request.style,
             aspectRatio: request.aspectRatio,
-            quality: request.quality
+            quality: request.quality,
+            hasReference: !!referenceImagePath,
         });
 
         try {
-            // 이미지 생성을 위한 프롬프트 구성
-            const imagePrompt = this.buildImagePrompt(request);
+            // 레퍼런스 이미지가 있으면 멀티모달, 없으면 텍스트 단독 요청
+            let contents: any;
+            if (referenceImagePath && fs.existsSync(referenceImagePath)) {
+                const referenceBase64 = fs.readFileSync(referenceImagePath).toString('base64');
+                contents = this.buildMultimodalContents(request, referenceBase64);
+                console.log('🖼️ 레퍼런스 이미지 포함 멀티모달 요청');
+            } else {
+                contents = this.buildImagePrompt(request);
+                console.log('📝 텍스트 단독 요청');
+            }
 
             console.log('🎨 Gemini 이미지 생성 시도 (모델: gemini-2.5-flash-image)');
             const response = await this.genAI.models.generateContent({
                 model: 'gemini-2.5-flash-image',
-                contents: imagePrompt,
+                contents,
             });
 
             console.log('✅ Gemini API 응답 수신 성공');
@@ -137,19 +146,36 @@ export class ImageGenerationService {
      * 이미지 생성을 위한 프롬프트를 구성합니다.
      */
     private buildImagePrompt(request: ImageGenerationRequest): string {
-        const style = request.style || 'professional';
-        const aspectRatio = request.aspectRatio || '1:1';
-        const quality = request.quality || 'standard';
+        return `Generate a high-quality image based on this prompt: ${request.prompt}. No text, no letters, no numbers anywhere in the image.`;
+    }
 
-        return `다음 요청에 따라 고품질 이미지를 생성해주세요:
+    /**
+     * 레퍼런스 이미지를 포함한 Gemini 멀티모달 요청용 contents를 구성합니다.
+     * 레퍼런스 이미지와 동일한 캐릭터·화풍을 유지하면서 새 장면을 생성합니다.
+     */
+    private buildMultimodalContents(request: ImageGenerationRequest, referenceImageBase64: string): any[] {
+        return [
+            {
+                role: 'user',
+                parts: [
+                    {
+                        inlineData: {
+                            mimeType: 'image/png',
+                            data: referenceImageBase64,
+                        },
+                    },
+                    {
+                        text: `This is a reference image. Generate a NEW image that:
+1. Uses the EXACT SAME art style as the reference image
+2. Features the EXACT SAME characters with the EXACT SAME appearance (hair, skin tone, clothing, facial features) as shown in the reference
+3. Only changes the scene, action, or setting as described below
+4. No text, no letters, no numbers anywhere in the image
 
-프롬프트: ${request.prompt}
-스타일: ${style}
-화면 비율: ${aspectRatio}
-품질: ${quality}
-
-이미지는 교육용 콘텐츠에 적합하고, 깔끔하고 전문적인 스타일로 생성해주세요. 
-텍스트나 글자는 포함하지 말고, 시각적으로 이해하기 쉬운 이미지로 만들어주세요.`;
+New scene to generate: ${request.prompt}`,
+                    },
+                ],
+            },
+        ];
     }
 
     /**
@@ -193,13 +219,13 @@ export class ImageGenerationService {
     /**
      * 이미지를 생성합니다 (Gemini 내장 이미지 생성 사용).
      */
-    public async generateImage(request: ImageGenerationRequest): Promise<GeneratedImage> {
+    public async generateImage(request: ImageGenerationRequest, referenceImagePath?: string): Promise<GeneratedImage> {
         console.log('=== Gemini 이미지 생성 시작 ===');
         console.log('요청 데이터:', request);
 
         try {
             console.log('🚀 Gemini로 이미지 생성 시도...');
-            const result = await this.generateImageWithGemini(request);
+            const result = await this.generateImageWithGemini(request, referenceImagePath);
             console.log('✅ Gemini 이미지 생성 성공!');
             return result;
         } catch (error) {

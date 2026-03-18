@@ -1,4 +1,5 @@
 import express from 'express';
+import * as path from 'path';
 import { VisualAnalysisService, ImageGenerationRequest } from '../services/visualAnalysisService';
 import { ImageGenerationService } from '../services/imageGenerationService';
 import { VisualDecisionEngine } from '../services/visualDecisionEngine';
@@ -611,6 +612,9 @@ router.post('/generate-storyboard-images', async (req, res) => {
         const generatedImages = [];
         const errors = [];
 
+        // 첫 번째로 성공한 이미지의 파일 경로 (레퍼런스용)
+        let referenceImagePath: string | undefined;
+
         // 각 장면에 대해 이미지 생성
         for (let i = 0; i < storyboard.scenes.length; i++) {
             const scene = storyboard.scenes[i];
@@ -627,7 +631,18 @@ router.post('/generate-storyboard-images', async (req, res) => {
                     quality: 'standard'
                 };
 
-                const generatedImage = await imageGenerationService.generateImage(imageRequest);
+                const generatedImage = await imageGenerationService.generateImage(imageRequest, referenceImagePath);
+
+                if (i === 0 && !referenceImagePath) {
+                    const tempDir = process.platform === 'win32'
+                        ? 'C:\\ffmpeg'
+                        : path.join(process.cwd(), 'temp-images');
+                    const fileName = generatedImage.url.split('/').pop();
+                    if (fileName) {
+                        referenceImagePath = path.join(tempDir, fileName);
+                        console.log(`✅ 레퍼런스 이미지 설정: ${referenceImagePath}`);
+                    }
+                }
 
                 generatedImages.push({
                     sceneNumber: scene.scene_number,
